@@ -193,22 +193,45 @@ class GameDraft {
 
 const gamePlatforms = <(String, String)>[
   ('pc', 'PC'),
-  ('xbox_360', 'Xbox 360'),
-  ('xbox_one', 'Xbox One'),
-  ('xbox_one_s', 'Xbox One S'),
-  ('xbox_series_s', 'Xbox Series S'),
-  ('xbox_series_x', 'Xbox Series X'),
-  ('playstation_3', 'PlayStation 3'),
-  ('playstation_4', 'PlayStation 4'),
-  ('playstation_5', 'PlayStation 5'),
-  ('nintendo_switch', 'Nintendo Switch'),
-  ('nintendo_switch_2', 'Nintendo Switch 2'),
-  ('other', 'Outras'),
+  ('xbox', 'Xbox'),
+  ('playstation', 'PlayStation'),
+  ('nintendo', 'Nintendo'),
+  ('other', 'Outros'),
 ];
 
-String platformLabel(String id) {
-  for (final platform in gamePlatforms) {
-    if (platform.$1 == id) return platform.$2;
+String platformFamilyId(String id) {
+  final normalized = id.trim().toLowerCase();
+  if (normalized == 'pc' || normalized.contains('windows')) return 'pc';
+  if (normalized.contains('xbox')) return 'xbox';
+  if (normalized.contains('playstation') || normalized.startsWith('ps')) {
+    return 'playstation';
   }
-  return 'Outras';
+  if (normalized.contains('nintendo') ||
+      normalized.contains('switch') ||
+      normalized.contains('wii')) {
+    return 'nintendo';
+  }
+  return 'other';
+}
+
+String platformLabel(String id) {
+  final legacyLabel = switch (id) {
+    'xbox_360' => 'Xbox 360',
+    'xbox_one' || 'xbox_one_s' => 'Xbox One',
+    'xbox_series_s' => 'Xbox Series S',
+    'xbox_series_x' => 'Xbox Series X',
+    'playstation_3' => 'PlayStation 3',
+    'playstation_4' => 'PlayStation 4',
+    'playstation_5' => 'PlayStation 5',
+    'nintendo_switch' => 'Nintendo Switch',
+    'nintendo_switch_2' => 'Nintendo Switch 2',
+    _ => null,
+  };
+  if (legacyLabel != null) return legacyLabel;
+
+  final familyId = platformFamilyId(id);
+  for (final platform in gamePlatforms) {
+    if (platform.$1 == familyId) return platform.$2;
+  }
+  return 'Outros';
 }

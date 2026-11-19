@@ -59,7 +59,7 @@ class LibraryHeaderArt extends StatelessWidget {
           ),
         ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(18, 8, 18, 12),
+          padding: const EdgeInsets.fromLTRB(18, 8, 18, 30),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -67,7 +67,7 @@ class LibraryHeaderArt extends StatelessWidget {
                 children: [
                   const Icon(
                     Icons.sports_esports_rounded,
-                    size: 27,
+                    size: 30,
                     color: AppColors.gold,
                   ),
                   const SizedBox(width: 8),
@@ -75,7 +75,7 @@ class LibraryHeaderArt extends StatelessWidget {
                     child: RichText(
                       text: const TextSpan(
                         style: TextStyle(
-                          fontSize: 18,
+                          fontSize: 20,
                           letterSpacing: .1,
                           fontWeight: FontWeight.w900,
                         ),
@@ -99,11 +99,11 @@ class LibraryHeaderArt extends StatelessWidget {
                       borderRadius: BorderRadius.circular(14),
                       onTap: onAdd,
                       child: const SizedBox(
-                        width: 48,
-                        height: 48,
+                        width: 42,
+                        height: 42,
                         child: Icon(
                           Icons.add_rounded,
-                          size: 31,
+                          size: 28,
                           color: AppColors.ink,
                         ),
                       ),

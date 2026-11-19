@@ -25,6 +25,17 @@ int _compareNullable(num? left, num? right, bool descending) {
   return descending ? -result : result;
 }
 
+int _compareSortCriterion(Game left, Game right, GameSortMode mode) {
+  if (mode.isRating) {
+    return _compareNullable(left.rating, right.rating, mode.isDescending);
+  }
+  return _compareNullable(
+    left.playtimeMinutes,
+    right.playtimeMinutes,
+    mode.isDescending,
+  );
+}
+
 List<Game> sortGames(
   Iterable<Game> input,
   GameSortMode mode, {
@@ -98,8 +109,6 @@ ReorderResult reorderGames({
   final reordered = List<Game>.of(sortedGames);
   final moving = reordered.removeAt(oldIndex);
   reordered.insert(newIndex, moving);
-  final destination = newIndex;
-
   if (mode == GameSortMode.manual) {
     return ReorderResult(
       games: reordered,
@@ -120,13 +129,20 @@ ReorderResult reorderGames({
     );
   }
 
-  final group = _criterionKey(moving, mode);
-  final neighborsStayInGroup =
-      (destination == 0 ||
-          _criterionKey(reordered[destination - 1], mode) == group) &&
-      (destination == reordered.length - 1 ||
-          _criterionKey(reordered[destination + 1], mode) == group);
-  if (!neighborsStayInGroup) {
+  final remainsSorted = reordered
+      .asMap()
+      .entries
+      .skip(1)
+      .every(
+        (entry) =>
+            _compareSortCriterion(
+              reordered[entry.key - 1],
+              entry.value,
+              mode,
+            ) <=
+            0,
+      );
+  if (!remainsSorted) {
     return ReorderResult(
       games: reordered,
       mode: GameSortMode.manual,
@@ -135,10 +151,16 @@ ReorderResult reorderGames({
   }
 
   final updatedTieOrders = Map<String, List<String>>.from(tieOrders);
-  updatedTieOrders['${mode.name}|$group'] = reordered
-      .where((game) => _criterionKey(game, mode) == group)
-      .map((game) => game.id)
-      .toList();
+  final tieGroups = <String, List<String>>{};
+  for (final game in reordered) {
+    final group = _criterionKey(game, mode)!;
+    tieGroups.putIfAbsent(group, () => []).add(game.id);
+  }
+  for (final entry in tieGroups.entries) {
+    if (entry.value.length > 1) {
+      updatedTieOrders['${mode.name}|${entry.key}'] = entry.value;
+    }
+  }
   return ReorderResult(
     games: reordered,
     mode: mode,

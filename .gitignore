@@ -17,3 +17,4 @@ linux/flutter/ephemeral/
 windows/flutter/ephemeral/
 web/.last_build_id
 config/rawg.local.json
+.env

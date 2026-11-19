@@ -32,10 +32,10 @@ class _GameFormScreenState extends ConsumerState<GameFormScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _coverController = TextEditingController();
-  final _ratingController = TextEditingController();
   final _hoursController = TextEditingController();
   final _catalogSearchController = TextEditingController();
   String _platformId = 'pc';
+  double _rating = 0;
   late GameListType _listType;
   GameStatus? _status = GameStatus.playing;
   DateTime? _startDate;
@@ -66,7 +66,6 @@ class _GameFormScreenState extends ConsumerState<GameFormScreen> {
   void dispose() {
     _nameController.dispose();
     _coverController.dispose();
-    _ratingController.dispose();
     _hoursController.dispose();
     _catalogSearchController.dispose();
     _catalogDebounce?.cancel();
@@ -77,9 +76,9 @@ class _GameFormScreenState extends ConsumerState<GameFormScreen> {
     _initialized = true;
     _nameController.text = game.name;
     _coverController.text = game.coverUrl ?? '';
-    _ratingController.text = game.rating?.toString() ?? '';
+    _rating = game.rating ?? 0;
     _hoursController.text = game.playtimeHours?.toString() ?? '';
-    _platformId = game.platformId;
+    _platformId = platformFamilyId(game.platformId);
     _listType = game.listType;
     _status = game.status;
     _startDate = game.startDate;
@@ -112,14 +111,6 @@ class _GameFormScreenState extends ConsumerState<GameFormScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(editing ? 'Editar jogo' : 'Adicionar jogo'),
-        actions: [
-          if (!editing)
-            IconButton(
-              tooltip: 'Pesquisa do catálogo',
-              onPressed: _catalogSearch,
-              icon: const Icon(Icons.travel_explore_rounded),
-            ),
-        ],
       ),
       body: SingleChildScrollView(
         child: Padding(
@@ -163,29 +154,24 @@ class _GameFormScreenState extends ConsumerState<GameFormScreen> {
                       ? 'Informe o nome do jogo.'
                       : null,
                 ),
-                const SizedBox(height: 12),
-                OptionMenuField<String>(
-                  label: 'Plataforma *',
-                  valueLabel: platformLabel(_platformId),
-                  icon: Icons.devices_rounded,
-                  options: gamePlatforms,
-                  onSelected: (value) => setState(() => _platformId = value),
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: _coverController,
-                  keyboardType: TextInputType.url,
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  initialValue: platformFamilyId(_platformId),
+                  isExpanded: true,
                   decoration: const InputDecoration(
-                    labelText: 'URL da capa (opcional)',
-                    prefixIcon: Icon(Icons.image_outlined),
+                    labelText: 'Plataforma *',
+                    prefixIcon: Icon(Icons.devices_rounded),
                   ),
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) return null;
-                    final uri = Uri.tryParse(value.trim());
-                    return uri != null &&
-                            (uri.scheme == 'http' || uri.scheme == 'https')
-                        ? null
-                        : 'Use um endereço iniciado por http:// ou https://.';
+                  items: gamePlatforms
+                      .map(
+                        (platform) => DropdownMenuItem<String>(
+                          value: platform.$1,
+                          child: Text(platform.$2),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (value) {
+                    if (value != null) setState(() => _platformId = value);
                   },
                 ),
                 if (editing && _source == GameSource.rawg)
@@ -203,31 +189,7 @@ class _GameFormScreenState extends ConsumerState<GameFormScreen> {
                 const SizedBox(height: 14),
                 LayoutBuilder(
                   builder: (context, constraints) {
-                    final ratingField = TextFormField(
-                      controller: _ratingController,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      decoration: const InputDecoration(
-                        labelText: 'Nota de 0 a 10',
-                        prefixIcon: Icon(Icons.star_outline_rounded),
-                      ),
-                      validator: (value) {
-                        if (value == null || value.trim().isEmpty) {
-                          return null;
-                        }
-                        final rating = double.tryParse(
-                          value.replaceAll(',', '.'),
-                        );
-                        if (rating == null ||
-                            !rating.isFinite ||
-                            rating < 0 ||
-                            rating > 10) {
-                          return 'Use um valor entre 0 e 10.';
-                        }
-                        return null;
-                      },
-                    );
+                    final ratingField = _ratingField(context);
                     final hoursField = TextFormField(
                       controller: _hoursController,
                       keyboardType: const TextInputType.numberWithOptions(
@@ -253,25 +215,26 @@ class _GameFormScreenState extends ConsumerState<GameFormScreen> {
                         return null;
                       },
                     );
-                    if (constraints.maxWidth < 430) {
+                    if (constraints.maxWidth < 540) {
                       return Column(
                         children: [
                           ratingField,
-                          const SizedBox(height: 12),
+                          const SizedBox(height: 16),
                           hoursField,
                         ],
                       );
                     }
                     return Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Expanded(child: ratingField),
-                        const SizedBox(width: 12),
+                        const SizedBox(width: 16),
                         Expanded(child: hoursField),
                       ],
                     );
                   },
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 16),
                 OptionMenuField<GameListType>(
                   label: 'Lista de destino',
                   valueLabel: _listType.label,
@@ -288,7 +251,7 @@ class _GameFormScreenState extends ConsumerState<GameFormScreen> {
                   }),
                 ),
                 if (_listType == GameListType.library) ...[
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 16),
                   OptionMenuField<GameStatus>(
                     label: 'Status *',
                     valueLabel: (_status ?? GameStatus.playing).label,
@@ -366,6 +329,57 @@ class _GameFormScreenState extends ConsumerState<GameFormScreen> {
       ),
     );
   }
+
+  Widget _ratingField(BuildContext context) => InputDecorator(
+    isEmpty: false,
+    decoration: const InputDecoration(
+      labelText: 'Nota de 0 a 10',
+      contentPadding: EdgeInsets.fromLTRB(12, 12, 12, 4),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          '${_rating.toStringAsFixed(1)} / 10',
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.w800,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+        ),
+        Slider(
+          value: _rating,
+          min: 0,
+          max: 10,
+          divisions: 20,
+          label: _rating.toStringAsFixed(1),
+          semanticFormatterCallback: (value) =>
+              '${value.toStringAsFixed(1)} de 10',
+          onChanged: (value) => setState(() => _rating = value),
+        ),
+        const SizedBox(height: 4),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                '0',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              Text(
+                '10',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
 
   Widget _catalogPanel(BuildContext context) => Container(
     padding: const EdgeInsets.all(16),
@@ -846,14 +860,12 @@ class _GameFormScreenState extends ConsumerState<GameFormScreen> {
   String? _platformFromRawg(List<String> names) {
     final normalized = names.map((name) => name.toLowerCase()).toList();
     const families = <(String, String)>[
-      ('playstation 5', 'playstation_5'),
-      ('playstation 4', 'playstation_4'),
-      ('playstation 3', 'playstation_3'),
-      ('xbox series', 'xbox_series_x'),
-      ('xbox one', 'xbox_one'),
-      ('xbox 360', 'xbox_360'),
-      ('nintendo switch', 'nintendo_switch'),
+      ('playstation', 'playstation'),
+      ('xbox', 'xbox'),
+      ('nintendo', 'nintendo'),
+      ('switch', 'nintendo'),
       ('pc', 'pc'),
+      ('windows', 'pc'),
     ];
     for (final family in families) {
       if (normalized.any((name) => name.contains(family.$1))) return family.$2;
@@ -871,7 +883,6 @@ class _GameFormScreenState extends ConsumerState<GameFormScreen> {
     }
     setState(() => _saving = true);
     try {
-      final ratingText = _ratingController.text.trim();
       final hoursText = _hoursController.text.trim();
       final hours = hoursText.isEmpty
           ? null
@@ -886,9 +897,7 @@ class _GameFormScreenState extends ConsumerState<GameFormScreen> {
         coverUrl: _coverController.text.trim().isEmpty
             ? null
             : _coverController.text.trim(),
-        rating: ratingText.isEmpty
-            ? null
-            : double.parse(ratingText.replaceAll(',', '.')),
+        rating: _rating,
         playtimeMinutes: hours == null ? null : (hours * 60).round(),
         startDate: _startDate,
         completionDate: _completionDate,

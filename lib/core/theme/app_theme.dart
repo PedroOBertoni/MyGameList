@@ -68,6 +68,8 @@ abstract final class AppTheme {
       backgroundColor: background,
       foregroundColor: scheme.onSurface,
       elevation: 0,
+      scrolledUnderElevation: 0,
+      surfaceTintColor: Colors.transparent,
       centerTitle: false,
     ),
     inputDecorationTheme: InputDecorationTheme(

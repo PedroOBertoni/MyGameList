@@ -11,7 +11,6 @@ import '../../core/models/game_sort.dart';
 import '../../core/providers/app_providers.dart';
 import '../../core/sync/sync_status_banner.dart';
 import '../../core/theme/app_theme.dart';
-import '../integrations/rawg_attribution_link.dart';
 import 'library_header_art.dart';
 
 class GameListScreen extends ConsumerStatefulWidget {
@@ -27,6 +26,9 @@ class _GameListScreenState extends ConsumerState<GameListScreen> {
   final _searchController = TextEditingController();
   String? _platformFilter;
   GameStatus? _statusFilter;
+  List<Game>? _reorderPreviewGames;
+  ListPreferences? _reorderPreviewPreferences;
+  bool _previewClearScheduled = false;
 
   @override
   void dispose() {
@@ -46,7 +48,11 @@ class _GameListScreenState extends ConsumerState<GameListScreen> {
       body: SafeArea(
         bottom: false,
         child: gamesAsync.when(
+          skipLoadingOnRefresh: true,
+          skipLoadingOnReload: true,
           data: (games) => preferencesAsync.when(
+            skipLoadingOnRefresh: true,
+            skipLoadingOnReload: true,
             data: (preferences) =>
                 _content(context, games, preferences, isWishlist),
             loading: () => _loadingPage(isWishlist),
@@ -82,27 +88,29 @@ class _GameListScreenState extends ConsumerState<GameListScreen> {
     ListPreferences preferences,
     bool isWishlist,
   ) {
-    final sorted = sortGames(
-      games,
-      preferences.sortMode,
-      tieOrders: preferences.tieOrders,
-    );
+    _clearReorderPreviewWhenSynced(games, preferences);
+    final displayedGames = _reorderPreviewGames ?? games;
+    final displayedPreferences = _reorderPreviewPreferences ?? preferences;
+    final sorted = _reorderPreviewGames == null
+        ? sortGames(
+            displayedGames,
+            displayedPreferences.sortMode,
+            tieOrders: displayedPreferences.tieOrders,
+          )
+        : List<Game>.of(displayedGames);
     final query = _searchController.text.trim().toLowerCase();
     final visible = sorted.where((game) {
       final matchesName =
           query.isEmpty || game.name.toLowerCase().contains(query);
       final matchesPlatform =
-          _platformFilter == null || game.platformId == _platformFilter;
+          _platformFilter == null ||
+          platformFamilyId(game.platformId) == _platformFilter;
       final matchesStatus =
           _statusFilter == null || game.status == _statusFilter;
       return matchesName && matchesPlatform && matchesStatus;
     }).toList();
     final filtered =
         query.isNotEmpty || _platformFilter != null || _statusFilter != null;
-    final rawgGames = games
-        .where((game) => game.source == GameSource.rawg)
-        .toList(growable: false);
-
     return CustomScrollView(
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       slivers: [
@@ -111,18 +119,23 @@ class _GameListScreenState extends ConsumerState<GameListScreen> {
         SliverToBoxAdapter(
           child: isWishlist
               ? _searchField(context)
-              : _librarySearchField(context, preferences, isWishlist),
+              : _librarySearchField(context, displayedPreferences, isWishlist),
         ),
         SliverToBoxAdapter(
           child: isWishlist
-              ? _wishlistSummary(games.length)
-              : _stats(context, games),
+              ? _wishlistSummary(displayedGames.length)
+              : _stats(context, displayedGames),
         ),
         if (isWishlist)
           SliverToBoxAdapter(child: _filters(context, isWishlist)),
         if (isWishlist)
           SliverToBoxAdapter(
-            child: _rankingControls(context, preferences, filtered, isWishlist),
+            child: _rankingControls(
+              context,
+              displayedPreferences,
+              filtered,
+              isWishlist,
+            ),
           ),
         if (filtered)
           SliverToBoxAdapter(
@@ -139,7 +152,7 @@ class _GameListScreenState extends ConsumerState<GameListScreen> {
         if (visible.isEmpty)
           SliverFillRemaining(
             hasScrollBody: false,
-            child: _emptyState(context, games.isEmpty, isWishlist),
+            child: _emptyState(context, displayedGames.isEmpty, isWishlist),
           )
         else
           SliverPadding(
@@ -153,8 +166,12 @@ class _GameListScreenState extends ConsumerState<GameListScreen> {
               itemCount: visible.length,
               onReorderItem: filtered
                   ? (_, _) {}
-                  : (oldIndex, newIndex) =>
-                        _reorder(sorted, preferences, oldIndex, newIndex),
+                  : (oldIndex, newIndex) => _reorder(
+                      sorted,
+                      displayedPreferences,
+                      oldIndex,
+                      newIndex,
+                    ),
               itemBuilder: (context, index) {
                 final game = visible[index];
                 final globalPosition =
@@ -166,8 +183,14 @@ class _GameListScreenState extends ConsumerState<GameListScreen> {
                     position: globalPosition,
                     index: index,
                     draggable: !filtered,
-                    onEdit: () => context.push('/games/${game.id}/edit'),
-                    onOpen: () => context.push('/games/${game.id}'),
+                    onEdit: () {
+                      _discardReorderPreview();
+                      context.push('/games/${game.id}/edit');
+                    },
+                    onOpen: () {
+                      _discardReorderPreview();
+                      context.push('/games/${game.id}');
+                    },
                     onDelete: () => _confirmDelete(game),
                   );
                 }
@@ -177,25 +200,19 @@ class _GameListScreenState extends ConsumerState<GameListScreen> {
                   position: globalPosition,
                   index: index,
                   draggable: !filtered,
-                  onEdit: () => context.push('/games/${game.id}/edit'),
-                  onOpen: () => context.push('/games/${game.id}'),
+                  onEdit: () {
+                    _discardReorderPreview();
+                    context.push('/games/${game.id}/edit');
+                  },
+                  onOpen: () {
+                    _discardReorderPreview();
+                    context.push('/games/${game.id}');
+                  },
                   onDelete: () => _confirmDelete(game),
                 );
               },
             ),
           ),
-        if (rawgGames.isNotEmpty)
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Center(
-                child: RawgAttributionLink(
-                  gameSlug: rawgGames.first.sourceGameId,
-                ),
-              ),
-            ),
-          ),
-        const SliverToBoxAdapter(child: SizedBox(height: 16)),
       ],
     );
   }
@@ -203,9 +220,59 @@ class _GameListScreenState extends ConsumerState<GameListScreen> {
   Widget _header(bool isWishlist) => LibraryHeaderArt(
     title: isWishlist ? 'Lista de Desejos' : 'Minha Biblioteca',
     subtitle: isWishlist ? 'Seus próximos jogos' : 'Seus jogos ranqueados',
-    onAdd: () => context.push('/add?list=${widget.listType.name}'),
+    onAdd: () {
+      _discardReorderPreview();
+      context.push('/add?list=${widget.listType.name}');
+    },
     useImageBackground: !isWishlist,
   );
+
+  void _clearReorderPreviewWhenSynced(
+    List<Game> games,
+    ListPreferences preferences,
+  ) {
+    final previewGames = _reorderPreviewGames;
+    final previewPreferences = _reorderPreviewPreferences;
+    if (previewGames == null ||
+        previewPreferences == null ||
+        preferences.sortMode != previewPreferences.sortMode) {
+      return;
+    }
+
+    final currentOrder = sortGames(
+      games,
+      preferences.sortMode,
+      tieOrders: preferences.tieOrders,
+    );
+    if (!_hasSameGameOrder(currentOrder, previewGames) ||
+        _previewClearScheduled) {
+      return;
+    }
+
+    _previewClearScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _previewClearScheduled = false;
+      if (!mounted ||
+          !identical(_reorderPreviewGames, previewGames) ||
+          !identical(_reorderPreviewPreferences, previewPreferences)) {
+        return;
+      }
+      setState(_discardReorderPreview);
+    });
+  }
+
+  bool _hasSameGameOrder(List<Game> left, List<Game> right) {
+    if (left.length != right.length) return false;
+    for (var index = 0; index < left.length; index++) {
+      if (left[index].id != right[index].id) return false;
+    }
+    return true;
+  }
+
+  void _discardReorderPreview() {
+    _reorderPreviewGames = null;
+    _reorderPreviewPreferences = null;
+  }
 
   Widget _librarySearchField(
     BuildContext context,
@@ -468,7 +535,7 @@ class _GameListScreenState extends ConsumerState<GameListScreen> {
       ),
     ];
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       child: Row(
         children: [
           for (var index = 0; index < counts.length; index++) ...[
@@ -734,6 +801,9 @@ class _GameListScreenState extends ConsumerState<GameListScreen> {
   );
 
   Future<void> _changeSort(GameSortMode mode) async {
+    if (_reorderPreviewGames != null) {
+      setState(_discardReorderPreview);
+    }
     final repository = await ref.read(gameRepositoryProvider.future);
     await repository.writePreference('${widget.listType.name}.sort', mode.name);
     ref.invalidate(listPreferencesProvider(widget.listType));
@@ -755,25 +825,46 @@ class _GameListScreenState extends ConsumerState<GameListScreen> {
       newIndex: newIndex,
       tieOrders: preferences.tieOrders,
     );
-    final repository = await ref.read(gameRepositoryProvider.future);
-    if (result.mode != preferences.sortMode) {
-      await repository.writePreference(
-        '${widget.listType.name}.sort',
-        result.mode.name,
+    final previewGames = List<Game>.of(result.games);
+    final previewPreferences = ListPreferences(
+      sortMode: result.mode,
+      tieOrders: result.tieOrders,
+    );
+    setState(() {
+      _reorderPreviewGames = previewGames;
+      _reorderPreviewPreferences = previewPreferences;
+    });
+
+    try {
+      final repository = await ref.read(gameRepositoryProvider.future);
+      if (result.mode != preferences.sortMode) {
+        await repository.writePreference(
+          '${widget.listType.name}.sort',
+          result.mode.name,
+        );
+        await repository.persistPositions(widget.listType, result.games);
+      } else if (result.mode == GameSortMode.manual) {
+        await repository.persistPositions(widget.listType, result.games);
+      } else {
+        await repository.writePreference(
+          '${widget.listType.name}.ties',
+          jsonEncode(result.tieOrders),
+        );
+        await repository.persistPositions(widget.listType, result.games);
+      }
+      ref.invalidate(gamesProvider(widget.listType));
+      ref.invalidate(listPreferencesProvider(widget.listType));
+      ref.invalidate(pendingOperationCountProvider);
+    } catch (error) {
+      if (!mounted) return;
+      setState(_discardReorderPreview);
+      ref.invalidate(gamesProvider(widget.listType));
+      ref.invalidate(listPreferencesProvider(widget.listType));
+      ref.invalidate(pendingOperationCountProvider);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Não foi possível salvar a nova ordem: $error')),
       );
-      await repository.persistPositions(widget.listType, result.games);
-    } else if (result.mode == GameSortMode.manual) {
-      await repository.persistPositions(widget.listType, result.games);
-    } else {
-      await repository.writePreference(
-        '${widget.listType.name}.ties',
-        jsonEncode(result.tieOrders),
-      );
-      await repository.persistPositions(widget.listType, result.games);
     }
-    ref.invalidate(gamesProvider(widget.listType));
-    ref.invalidate(listPreferencesProvider(widget.listType));
-    ref.invalidate(pendingOperationCountProvider);
   }
 
   Future<void> _confirmDelete(Game game) async {
@@ -797,6 +888,9 @@ class _GameListScreenState extends ConsumerState<GameListScreen> {
       ),
     );
     if (confirmed != true) return;
+    if (_reorderPreviewGames != null) {
+      setState(_discardReorderPreview);
+    }
     final repository = await ref.read(gameRepositoryProvider.future);
     await repository.deleteGame(game.id);
     ref.invalidate(gamesProvider(widget.listType));
@@ -824,13 +918,13 @@ class _StatCard extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
     return LayoutBuilder(
       builder: (context, constraints) {
-        final compact = constraints.maxWidth < 88;
+        final compact = constraints.maxWidth < 100;
         final heading = Text(
           label,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: Theme.of(context).textTheme.labelSmall?.copyWith(
-            fontSize: compact ? 8 : 9,
+            fontSize: compact ? 9 : 10,
             height: 1,
             color: colors.onSurfaceVariant,
           ),
@@ -839,16 +933,16 @@ class _StatCard extends StatelessWidget {
           '$value',
           style: Theme.of(context).textTheme.titleSmall?.copyWith(
             color: highlighted ? AppColors.gold : colors.onSurface,
-            fontSize: compact ? 16 : 18,
+            fontSize: compact ? 17 : 19,
             height: 1,
             fontWeight: FontWeight.w900,
           ),
         );
         return Container(
-          height: 54,
+          height: 60,
           padding: EdgeInsets.symmetric(
             horizontal: compact ? 2 : 7,
-            vertical: 5,
+            vertical: compact ? 4 : 6,
           ),
           decoration: BoxDecoration(
             color: const Color(0xFF0C151D),
@@ -862,22 +956,23 @@ class _StatCard extends StatelessWidget {
               ? Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(icon, color: color, size: 14),
-                    const SizedBox(height: 1),
+                    Icon(icon, color: color, size: 16),
+                    const SizedBox(height: 2),
                     heading,
+                    const SizedBox(height: 3),
                     count,
                   ],
                 )
               : Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(icon, color: color, size: 24),
+                    Icon(icon, color: color, size: 26),
                     const SizedBox(width: 7),
                     Flexible(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [heading, const SizedBox(height: 2), count],
+                        children: [heading, const SizedBox(height: 4), count],
                       ),
                     ),
                   ],
@@ -924,6 +1019,14 @@ class GameCard extends StatelessWidget {
           final narrow = constraints.maxWidth < 370;
           final coverWidth = narrow ? 54.0 : 70.0;
           final coverHeight = narrow ? 66.0 : 78.0;
+          final positionColor = switch (position) {
+            1 => AppColors.accent(context),
+            2 => const Color(0xFFD4D9E2),
+            3 => const Color(0xFFC98750),
+            4 => const Color(0xFF68B7FF),
+            5 => AppColors.green,
+            _ => theme.colorScheme.onSurfaceVariant,
+          };
           return InkWell(
             borderRadius: BorderRadius.circular(18),
             onTap: onOpen,
@@ -933,57 +1036,141 @@ class GameCard extends StatelessWidget {
                 vertical: 5,
               ),
               child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  SizedBox(
-                    width: 48,
-                    child: draggable
-                        ? ReorderableDelayedDragStartListener(
-                            index: index,
-                            child: _RankEmblem(position: position),
-                          )
-                        : _RankEmblem(position: position),
-                  ),
-                  SizedBox(width: narrow ? 4 : 8),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(11),
-                    child: SizedBox(
-                      width: coverWidth,
-                      height: coverHeight,
-                      child: game.coverUrl == null || game.coverUrl!.isEmpty
-                          ? _coverPlaceholder(context)
-                          : CachedNetworkImage(
-                              imageUrl: game.coverUrl!,
-                              fit: BoxFit.cover,
-                              placeholder: (_, _) => _coverPlaceholder(context),
-                              errorWidget: (_, _, _) =>
-                                  _coverPlaceholder(context),
-                            ),
-                    ),
-                  ),
-                  SizedBox(width: narrow ? 7 : 12),
-                  Expanded(
-                    child: Column(
+                  Container(
+                    child: Row(
                       mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          game.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                          position <= 5 ? '#$position' : '$position',
+                          textAlign: TextAlign.center,
                           style: theme.textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w800,
-                            fontSize: narrow ? 13 : 16,
+                            color: positionColor,
+                            fontWeight: FontWeight.w900,
+                            fontSize: narrow ? 17 : 21,
                           ),
                         ),
-                        const SizedBox(height: 4),
-                        Row(
-                          children: [
-                            Flexible(
-                              fit: FlexFit.tight,
-                              child: _PlatformLabel(game: game),
+                        SizedBox(width: narrow ? 6 : 9),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(11),
+                          child: SizedBox(
+                            width: coverWidth,
+                            height: coverHeight,
+                            child:
+                                game.coverUrl == null || game.coverUrl!.isEmpty
+                                ? _coverPlaceholder(context)
+                                : CachedNetworkImage(
+                                    imageUrl: game.coverUrl!,
+                                    fit: BoxFit.cover,
+                                    placeholder: (_, _) =>
+                                        _coverPlaceholder(context),
+                                    errorWidget: (_, _, _) =>
+                                        _coverPlaceholder(context),
+                                  ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  SizedBox(width: narrow ? 4 : 8),
+                  Expanded(
+                    child: Container(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            game.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w800,
+                              fontSize: narrow ? 13 : 16,
                             ),
-                            if (game.status != null) ...[
+                          ),
+                          const SizedBox(height: 4),
+                          _PlatformLabel(game: game),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 3),
+                            child: Divider(
+                              height: 1,
+                              color: theme.colorScheme.outlineVariant
+                                  .withValues(alpha: .4),
+                            ),
+                          ),
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.schedule_rounded,
+                                size: 15,
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
                               const SizedBox(width: 4),
+                              Text(
+                                game.playtimeMinutes == null
+                                    ? '— h'
+                                    : '${game.playtimeHours!.toStringAsFixed(game.playtimeHours! % 1 == 0 ? 0 : 1)}h',
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  SizedBox(width: narrow ? 4 : 8),
+                  Container(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            if (game.rating != null)
+                              Container(
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: narrow ? 5 : 8,
+                                  vertical: 5,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: AppColors.gold.withValues(alpha: .08),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: AppColors.gold.withValues(
+                                      alpha: .78,
+                                    ),
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.star_rounded,
+                                      color: AppColors.gold,
+                                      size: narrow ? 14 : 17,
+                                    ),
+                                    const SizedBox(width: 2),
+                                    Text(
+                                      game.rating!.toStringAsFixed(1),
+                                      style: theme.textTheme.labelLarge
+                                          ?.copyWith(
+                                            color: AppColors.gold,
+                                            fontWeight: FontWeight.w900,
+                                            fontSize: narrow ? 11 : 14,
+                                          ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            if (game.status != null) ...[
+                              if (game.rating != null)
+                                SizedBox(height: narrow ? 6 : 8),
                               _StatusChip(
                                 status: game.status!,
                                 compact: narrow,
@@ -991,72 +1178,11 @@ class GameCard extends StatelessWidget {
                             ],
                           ],
                         ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 3),
-                          child: Divider(
-                            height: 1,
-                            color: theme.colorScheme.outlineVariant.withValues(
-                              alpha: .4,
-                            ),
-                          ),
-                        ),
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.schedule_rounded,
-                              size: 15,
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              game.playtimeMinutes == null
-                                  ? '— h'
-                                  : '${game.playtimeHours!.toStringAsFixed(game.playtimeHours! % 1 == 0 ? 0 : 1)}h',
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
+                        SizedBox(width: narrow ? 4 : 7),
+                        _LibraryDragHandle(index: index, draggable: draggable),
                       ],
                     ),
                   ),
-                  if (game.rating != null) ...[
-                    SizedBox(width: narrow ? 4 : 7),
-                    Container(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: narrow ? 5 : 8,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.gold.withValues(alpha: .08),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: AppColors.gold.withValues(alpha: .78),
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.star_rounded,
-                            color: AppColors.gold,
-                            size: narrow ? 14 : 17,
-                          ),
-                          const SizedBox(width: 2),
-                          Text(
-                            game.rating!.toStringAsFixed(1),
-                            style: theme.textTheme.labelLarge?.copyWith(
-                              color: AppColors.gold,
-                              fontWeight: FontWeight.w900,
-                              fontSize: narrow ? 11 : 14,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
                 ],
               ),
             ),
@@ -1076,107 +1202,33 @@ class GameCard extends StatelessWidget {
   );
 }
 
-class _RankEmblem extends StatelessWidget {
-  const _RankEmblem({required this.position});
+class _LibraryDragHandle extends StatelessWidget {
+  const _LibraryDragHandle({required this.index, required this.draggable});
 
-  final int position;
+  final int index;
+  final bool draggable;
 
   @override
   Widget build(BuildContext context) {
-    final medal = switch (position) {
-      1 => AppColors.accent(context),
-      2 => const Color(0xFFD4D9E2),
-      3 => const Color(0xFFC98750),
-      _ => null,
-    };
-    if (medal == null) {
-      return Center(
-        child: Text(
-          '#$position',
-          style: Theme.of(context).textTheme.labelLarge?.copyWith(
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-            fontWeight: FontWeight.w900,
-            fontSize: 16,
+    final handle = Tooltip(
+      message: draggable
+          ? 'Arraste para reordenar'
+          : 'Limpe os filtros para reordenar',
+      child: SizedBox(
+        width: 26,
+        height: 46,
+        child: Icon(
+          Icons.drag_indicator_rounded,
+          size: 20,
+          color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(
+            alpha: draggable ? .85 : .4,
           ),
         ),
-      );
-    }
-    return SizedBox(
-      width: 48,
-      height: 52,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          CustomPaint(
-            size: const Size(48, 50),
-            painter: _LaurelPainter(color: medal),
-          ),
-          Text(
-            '#$position',
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              color: medal,
-              fontWeight: FontWeight.w900,
-              fontSize: 15,
-              shadows: [
-                Shadow(color: medal.withValues(alpha: .24), blurRadius: 6),
-              ],
-            ),
-          ),
-        ],
       ),
     );
+    if (!draggable) return handle;
+    return ReorderableDragStartListener(index: index, child: handle);
   }
-}
-
-class _LaurelPainter extends CustomPainter {
-  const _LaurelPainter({required this.color});
-
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final branchPaint = Paint()
-      ..color = color.withValues(alpha: .72)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.2
-      ..strokeCap = StrokeCap.round;
-    for (final isLeft in [true, false]) {
-      final branch = Path()
-        ..moveTo(isLeft ? 12 : size.width - 12, size.height - 4)
-        ..cubicTo(
-          isLeft ? 3 : size.width - 3,
-          size.height * .62,
-          isLeft ? 5 : size.width - 5,
-          size.height * .28,
-          isLeft ? 13 : size.width - 13,
-          4,
-        );
-      canvas.drawPath(branch, branchPaint);
-      final leafPaint = Paint()
-        ..color = color.withValues(alpha: .82)
-        ..style = PaintingStyle.fill;
-      for (var index = 0; index < 4; index++) {
-        final y = 12.0 + index * 7.0;
-        final direction = isLeft ? 1.0 : -1.0;
-        final x = isLeft ? 9.0 : size.width - 9.0;
-        canvas.save();
-        canvas.translate(x, y);
-        canvas.rotate(direction * (index.isEven ? .48 : -.48));
-        canvas.drawOval(
-          Rect.fromCenter(
-            center: Offset(direction * 3, 0),
-            width: 7,
-            height: 3.2,
-          ),
-          leafPaint,
-        );
-        canvas.restore();
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(_LaurelPainter oldDelegate) => oldDelegate.color != color;
 }
 
 class _PlatformLabel extends StatelessWidget {
@@ -1249,10 +1301,10 @@ class _StatusChip extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
           color: color,
           fontWeight: FontWeight.w800,
-          fontSize: compact ? 8 : 9,
+          fontSize: compact ? 11 : 12,
           height: 1.1,
         ),
       ),

@@ -2,9 +2,15 @@ import 'package:material_ui/material_ui.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class RawgAttributionLink extends StatelessWidget {
-  const RawgAttributionLink({this.compact = false, this.gameSlug, super.key});
+  const RawgAttributionLink({
+    this.compact = false,
+    this.iconOnly = false,
+    this.gameSlug,
+    super.key,
+  });
 
   final bool compact;
+  final bool iconOnly;
   final String? gameSlug;
 
   Future<void> _open(BuildContext context) async {
@@ -34,14 +40,23 @@ class RawgAttributionLink extends StatelessWidget {
       borderRadius: BorderRadius.circular(8),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-        child: Text(
-          compact ? 'RAWG ↗' : 'Dados e imagens: RAWG ↗',
-          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-            color: Theme.of(context).colorScheme.primary,
-            decoration: TextDecoration.underline,
-            decorationColor: Theme.of(context).colorScheme.primary,
-          ),
-        ),
+        child: iconOnly
+            ? Tooltip(
+                message: 'Abrir RAWG',
+                child: Icon(
+                  Icons.open_in_new_rounded,
+                  size: 14,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              )
+            : Text(
+                compact ? 'RAWG ↗' : 'Dados e imagens: RAWG ↗',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: Theme.of(context).colorScheme.primary,
+                  decoration: TextDecoration.underline,
+                  decorationColor: Theme.of(context).colorScheme.primary,
+                ),
+              ),
       ),
     ),
   );

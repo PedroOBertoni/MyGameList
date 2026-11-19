@@ -86,30 +86,59 @@ class _NavigationItem extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         onTap: onTap,
         child: SizedBox(
-          height: 60,
+          height: 64,
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 220),
-                transitionBuilder: (child, animation) => FadeTransition(
-                  opacity: animation,
-                  child: ScaleTransition(scale: animation, child: child),
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 3,
                 ),
-                child: Icon(
-                  icon,
-                  key: ValueKey(selected),
-                  size: 24,
-                  color: color,
-                ),
-              ),
-              const SizedBox(height: 3),
-              Text(
-                label,
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: color,
-                  fontSize: 11,
-                  fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 220),
+                      transitionBuilder: (child, animation) => FadeTransition(
+                        opacity: animation,
+                        child: ScaleTransition(scale: animation, child: child),
+                      ),
+                      child: Icon(
+                        icon,
+                        key: ValueKey(selected),
+                        size: 24,
+                        color: color,
+                        shadows: selected
+                            ? [
+                                Shadow(
+                                  color: AppColors.gold.withValues(alpha: .78),
+                                  blurRadius: 12,
+                                ),
+                              ]
+                            : null,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      label,
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: color,
+                        fontSize: 11,
+                        fontWeight: selected
+                            ? FontWeight.w800
+                            : FontWeight.w500,
+                        shadows: selected
+                            ? [
+                                Shadow(
+                                  color: AppColors.gold.withValues(alpha: .72),
+                                  blurRadius: 10,
+                                ),
+                              ]
+                            : null,
+                      ),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: 5),
