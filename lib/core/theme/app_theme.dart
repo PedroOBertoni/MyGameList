@@ -67,6 +67,12 @@ abstract final class AppTheme {
     appBarTheme: AppBarTheme(
       backgroundColor: background,
       foregroundColor: scheme.onSurface,
+      titleTextStyle: TextStyle(
+        color: scheme.onSurface,
+        fontSize: 22,
+        fontWeight: FontWeight.w800,
+      ),
+      iconTheme: IconThemeData(color: scheme.primary),
       elevation: 0,
       scrolledUnderElevation: 0,
       surfaceTintColor: Colors.transparent,

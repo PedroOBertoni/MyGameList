@@ -7,6 +7,7 @@ import '../models/game.dart';
 import '../theme/theme_controller.dart';
 import '../../features/integrations/integration_contracts.dart';
 import '../../features/integrations/rawg_catalog_gateway.dart';
+import '../../features/integrations/steam_library_importer.dart';
 import '../../features/games/data/game_repository.dart';
 
 final databaseProvider = FutureProvider<AppDatabase>((ref) async {
@@ -85,9 +86,13 @@ final authGatewayProvider = Provider<AuthGateway>(
   (ref) => const UnconfiguredAuthGateway(),
 );
 
-final platformLibraryImporterProvider = Provider<PlatformLibraryImporter>(
-  (ref) => const UnconfiguredPlatformLibraryImporter(),
-);
+final platformLibraryImporterProvider = Provider<PlatformLibraryImporter>((
+  ref,
+) {
+  final importer = SteamLibraryImporter();
+  ref.onDispose(importer.close);
+  return importer;
+});
 
 final syncBackendProvider = Provider<SyncBackend>(
   (ref) => const UnconfiguredSyncBackend(),

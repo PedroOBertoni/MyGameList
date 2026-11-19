@@ -160,22 +160,35 @@ class AppDatabase extends GeneratedDatabase {
     return (await getGame(gameId))!;
   }
 
-  Future<void> deleteGame(String id) async {
+  Future<void> deleteGame(String id) => deleteGames([id]);
+
+  Future<void> deleteGames(List<String> ids) async {
+    final uniqueIds = ids.toSet();
+    if (uniqueIds.isEmpty) return;
+
     final now = DateTime.now().toUtc();
     await transaction(() async {
-      await customStatement(
-        '''
-        UPDATE games SET deleted_at = ?, updated_at = ?, local_sync_status = 'pending'
-        WHERE id = ? AND deleted_at IS NULL
-      ''',
-        [now.toIso8601String(), now.toIso8601String(), id],
-      );
-      final rows = await customSelect(
-        'SELECT * FROM games WHERE id = ?',
-        variables: [Variable.withString(id)],
-      ).get();
-      if (rows.isNotEmpty) {
-        await _queueGame(Game.fromRow(rows.first.data), type: 'delete');
+      for (final id in uniqueIds) {
+        final existingRows = await customSelect(
+          'SELECT * FROM games WHERE id = ? AND deleted_at IS NULL',
+          variables: [Variable.withString(id)],
+        ).get();
+        if (existingRows.isEmpty) continue;
+
+        await customStatement(
+          '''
+          UPDATE games SET deleted_at = ?, updated_at = ?, local_sync_status = 'pending'
+          WHERE id = ? AND deleted_at IS NULL
+        ''',
+          [now.toIso8601String(), now.toIso8601String(), id],
+        );
+        final deletedRows = await customSelect(
+          'SELECT * FROM games WHERE id = ?',
+          variables: [Variable.withString(id)],
+        ).get();
+        if (deletedRows.isNotEmpty) {
+          await _queueGame(Game.fromRow(deletedRows.first.data), type: 'delete');
+        }
       }
     });
   }

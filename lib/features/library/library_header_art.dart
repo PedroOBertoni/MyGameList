@@ -67,7 +67,7 @@ class LibraryHeaderArt extends StatelessWidget {
                 children: [
                   const Icon(
                     Icons.sports_esports_rounded,
-                    size: 30,
+                    size: 34,
                     color: AppColors.gold,
                   ),
                   const SizedBox(width: 8),
@@ -75,7 +75,7 @@ class LibraryHeaderArt extends StatelessWidget {
                     child: RichText(
                       text: const TextSpan(
                         style: TextStyle(
-                          fontSize: 20,
+                          fontSize: 22,
                           letterSpacing: .1,
                           fontWeight: FontWeight.w900,
                         ),
@@ -122,8 +122,9 @@ class LibraryHeaderArt extends StatelessWidget {
                       borderRadius: BorderRadius.circular(99),
                       boxShadow: [
                         BoxShadow(
-                          color: AppColors.gold.withValues(alpha: .56),
-                          blurRadius: 10,
+                          color: AppColors.gold.withValues(alpha: .35),
+                          blurRadius: 5,
+                          spreadRadius: -1,
                         ),
                       ],
                     ),

@@ -9,6 +9,7 @@ import 'package:intl/intl.dart';
 import '../../core/models/game.dart';
 import '../../core/providers/app_providers.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/utils/steam_cover_art.dart';
 import '../../core/widgets/option_menu_field.dart';
 import '../integrations/integration_contracts.dart';
 import '../integrations/rawg_catalog_gateway.dart';
@@ -37,7 +38,7 @@ class _GameFormScreenState extends ConsumerState<GameFormScreen> {
   String _platformId = 'pc';
   double _rating = 0;
   late GameListType _listType;
-  GameStatus? _status = GameStatus.playing;
+  GameStatus? _status = GameStatus.completed;
   DateTime? _startDate;
   DateTime? _completionDate;
   bool _initialized = false;
@@ -75,7 +76,12 @@ class _GameFormScreenState extends ConsumerState<GameFormScreen> {
   void _loadExisting(Game game) {
     _initialized = true;
     _nameController.text = game.name;
-    _coverController.text = game.coverUrl ?? '';
+    final steamAppId = game.source == GameSource.steam
+        ? game.sourceGameId ?? game.externalGameId
+        : null;
+    _coverController.text = steamAppId == null
+        ? game.coverUrl ?? ''
+        : steamLibraryCoverUrl(steamAppId);
     _rating = game.rating ?? 0;
     _hoursController.text = game.playtimeHours?.toString() ?? '';
     _platformId = platformFamilyId(game.platformId);
@@ -109,9 +115,7 @@ class _GameFormScreenState extends ConsumerState<GameFormScreen> {
     }
     final editing = widget.gameId != null;
     return Scaffold(
-      appBar: AppBar(
-        title: Text(editing ? 'Editar jogo' : 'Adicionar jogo'),
-      ),
+      appBar: AppBar(title: Text(editing ? 'Editar jogo' : 'Adicionar jogo')),
       body: SingleChildScrollView(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
@@ -246,7 +250,7 @@ class _GameFormScreenState extends ConsumerState<GameFormScreen> {
                     _listType = value;
                     if (_listType == GameListType.wishlist) _status = null;
                     if (_listType == GameListType.library && _status == null) {
-                      _status = GameStatus.playing;
+                      _status = GameStatus.completed;
                     }
                   }),
                 ),
@@ -364,15 +368,15 @@ class _GameFormScreenState extends ConsumerState<GameFormScreen> {
             children: [
               Text(
                 '0',
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
               ),
               Text(
                 '10',
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
               ),
             ],
           ),

@@ -1,4 +1,3 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -6,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../../core/models/game.dart';
 import '../../core/providers/app_providers.dart';
+import '../../core/widgets/game_cover_image.dart';
 import '../integrations/rawg_attribution_link.dart';
 
 class GameDetailScreen extends ConsumerWidget {
@@ -36,19 +36,11 @@ class GameDetailScreen extends ConsumerWidget {
         borderRadius: BorderRadius.circular(22),
         child: SizedBox(
           height: 220,
-          child: game.coverUrl == null
-              ? ColoredBox(
-                  color: Theme.of(context).colorScheme.surface,
-                  child: const Icon(Icons.videogame_asset_rounded, size: 68),
-                )
-              : CachedNetworkImage(
-                  imageUrl: game.coverUrl!,
-                  fit: BoxFit.cover,
-                  errorWidget: (_, _, _) => ColoredBox(
-                    color: Theme.of(context).colorScheme.surface,
-                    child: const Icon(Icons.videogame_asset_rounded, size: 68),
-                  ),
-                ),
+          child: GameCoverImage(
+            game: game,
+            placeholderIconSize: 68,
+            placeholderColor: Theme.of(context).colorScheme.surface,
+          ),
         ),
       ),
       const SizedBox(height: 20),

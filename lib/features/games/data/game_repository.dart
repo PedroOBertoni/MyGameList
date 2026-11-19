@@ -6,6 +6,7 @@ abstract interface class GameRepository {
   Future<Game?> getGame(String id);
   Future<Game> saveGame(GameDraft draft, {String? id});
   Future<void> deleteGame(String id);
+  Future<void> deleteGames(List<String> ids);
   Future<void> moveToLibrary(String id, GameStatus status);
   Future<void> persistPositions(GameListType listType, List<Game> games);
   Future<int> get pendingOperationCount;
@@ -31,6 +32,9 @@ class DriftGameRepository implements GameRepository {
 
   @override
   Future<void> deleteGame(String id) => _database.deleteGame(id);
+
+  @override
+  Future<void> deleteGames(List<String> ids) => _database.deleteGames(ids);
 
   @override
   Future<void> moveToLibrary(String id, GameStatus status) =>

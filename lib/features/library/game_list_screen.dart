@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -11,6 +10,7 @@ import '../../core/models/game_sort.dart';
 import '../../core/providers/app_providers.dart';
 import '../../core/sync/sync_status_banner.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/game_cover_image.dart';
 import 'library_header_art.dart';
 
 class GameListScreen extends ConsumerStatefulWidget {
@@ -24,11 +24,15 @@ class GameListScreen extends ConsumerStatefulWidget {
 
 class _GameListScreenState extends ConsumerState<GameListScreen> {
   final _searchController = TextEditingController();
+  final Set<String> _selectedGameIds = {};
   String? _platformFilter;
   GameStatus? _statusFilter;
   List<Game>? _reorderPreviewGames;
   ListPreferences? _reorderPreviewPreferences;
   bool _previewClearScheduled = false;
+  bool _batchDeleting = false;
+
+  bool get _selectionMode => _selectedGameIds.isNotEmpty;
 
   @override
   void dispose() {
@@ -149,6 +153,10 @@ class _GameListScreenState extends ConsumerState<GameListScreen> {
               ),
             ),
           ),
+        if (_selectionMode)
+          SliverToBoxAdapter(
+            child: _selectionToolbar(context, displayedGames),
+          ),
         if (visible.isEmpty)
           SliverFillRemaining(
             hasScrollBody: false,
@@ -182,15 +190,15 @@ class _GameListScreenState extends ConsumerState<GameListScreen> {
                     game: game,
                     position: globalPosition,
                     index: index,
-                    draggable: !filtered,
+                    draggable: !filtered && !_selectionMode,
+                    selected: _selectedGameIds.contains(game.id),
+                    selectionMode: _selectionMode,
                     onEdit: () {
                       _discardReorderPreview();
                       context.push('/games/${game.id}/edit');
                     },
-                    onOpen: () {
-                      _discardReorderPreview();
-                      context.push('/games/${game.id}');
-                    },
+                    onOpen: () => _handleGameTap(game),
+                    onLongPress: () => _toggleGameSelection(game.id),
                     onDelete: () => _confirmDelete(game),
                   );
                 }
@@ -199,15 +207,15 @@ class _GameListScreenState extends ConsumerState<GameListScreen> {
                   game: game,
                   position: globalPosition,
                   index: index,
-                  draggable: !filtered,
+                  draggable: !filtered && !_selectionMode,
+                  selected: _selectedGameIds.contains(game.id),
+                  selectionMode: _selectionMode,
                   onEdit: () {
                     _discardReorderPreview();
                     context.push('/games/${game.id}/edit');
                   },
-                  onOpen: () {
-                    _discardReorderPreview();
-                    context.push('/games/${game.id}');
-                  },
+                  onOpen: () => _handleGameTap(game),
+                  onLongPress: () => _toggleGameSelection(game.id),
                   onDelete: () => _confirmDelete(game),
                 );
               },
@@ -224,8 +232,117 @@ class _GameListScreenState extends ConsumerState<GameListScreen> {
       _discardReorderPreview();
       context.push('/add?list=${widget.listType.name}');
     },
-    useImageBackground: !isWishlist,
+    useImageBackground: true,
   );
+
+  Widget _selectionToolbar(
+    BuildContext context,
+    List<Game> allGames,
+  ) {
+    final allGameIds = allGames.map((game) => game.id).toSet();
+    final allGamesSelected =
+        allGameIds.isNotEmpty && allGameIds.every(_selectedGameIds.contains);
+    final count = _selectedGameIds.length;
+    final horizontalPadding = widget.listType == GameListType.wishlist
+        ? 12.0
+        : 10.0;
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(horizontalPadding, 0, horizontalPadding, 8),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.gold.withValues(alpha: .5)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '$count selecionado${count == 1 ? '' : 's'}',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: allGames.isEmpty || _batchDeleting
+                      ? null
+                      : () => _toggleGamesSelection(allGames),
+                  child: Text(
+                    allGamesSelected
+                        ? 'Desmarcar todos'
+                        : 'Selecionar todos',
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Cancelar seleção',
+                  onPressed: _batchDeleting ? null : _clearSelection,
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            FilledButton.tonalIcon(
+              onPressed: _batchDeleting
+                  ? null
+                  : () => _confirmDeleteSelected(allGames),
+              icon: _batchDeleting
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.delete_outline_rounded),
+              label: Text(
+                _batchDeleting
+                    ? 'Excluindo…'
+                    : count == 1
+                        ? 'Excluir 1 jogo'
+                        : 'Excluir $count jogos',
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _handleGameTap(Game game) {
+    if (_selectionMode) {
+      _toggleGameSelection(game.id);
+      return;
+    }
+    _discardReorderPreview();
+    context.push('/games/${game.id}');
+  }
+
+  void _toggleGameSelection(String gameId) {
+    if (_batchDeleting) return;
+    setState(() {
+      if (!_selectedGameIds.add(gameId)) _selectedGameIds.remove(gameId);
+    });
+  }
+
+  void _toggleGamesSelection(List<Game> games) {
+    final gameIds = games.map((game) => game.id).toSet();
+    final allGamesSelected =
+        gameIds.isNotEmpty && gameIds.every(_selectedGameIds.contains);
+    setState(() {
+      if (allGamesSelected) {
+        _selectedGameIds.removeAll(gameIds);
+      } else {
+        _selectedGameIds.addAll(gameIds);
+      }
+    });
+  }
+
+  void _clearSelection() {
+    setState(_selectedGameIds.clear);
+  }
 
   void _clearReorderPreviewWhenSynced(
     List<Game> games,
@@ -867,6 +984,71 @@ class _GameListScreenState extends ConsumerState<GameListScreen> {
     }
   }
 
+  Future<void> _confirmDeleteSelected(List<Game> games) async {
+    final selectedGames = games
+        .where((game) => _selectedGameIds.contains(game.id))
+        .toList(growable: false);
+    if (selectedGames.isEmpty) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          selectedGames.length == 1
+              ? 'Excluir 1 jogo?'
+              : 'Excluir ${selectedGames.length} jogos?',
+        ),
+        content: const Text(
+          'Os jogos selecionados serão removidos desta lista neste dispositivo.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton.tonalIcon(
+            onPressed: () => Navigator.pop(context, true),
+            icon: const Icon(Icons.delete_outline_rounded),
+            label: const Text('Excluir'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    setState(() {
+      _batchDeleting = true;
+      _discardReorderPreview();
+    });
+    try {
+      final repository = await ref.read(gameRepositoryProvider.future);
+      await repository.deleteGames(
+        selectedGames.map((game) => game.id).toList(growable: false),
+      );
+      if (!mounted) return;
+      setState(_selectedGameIds.clear);
+      ref.invalidate(gamesProvider(widget.listType));
+      ref.invalidate(pendingOperationCountProvider);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            selectedGames.length == 1
+                ? 'Jogo excluído.'
+                : 'Excluídos ${selectedGames.length} jogos.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Não foi possível excluir os jogos: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _batchDeleting = false);
+    }
+  }
+
   Future<void> _confirmDelete(Game game) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -989,8 +1171,11 @@ class GameCard extends StatelessWidget {
     required this.position,
     required this.index,
     required this.draggable,
+    required this.selected,
+    required this.selectionMode,
     required this.onEdit,
     required this.onOpen,
+    required this.onLongPress,
     required this.onDelete,
     super.key,
   });
@@ -999,8 +1184,11 @@ class GameCard extends StatelessWidget {
   final int position;
   final int index;
   final bool draggable;
+  final bool selected;
+  final bool selectionMode;
   final VoidCallback onEdit;
   final VoidCallback onOpen;
+  final VoidCallback onLongPress;
   final VoidCallback onDelete;
 
   @override
@@ -1008,17 +1196,31 @@ class GameCard extends StatelessWidget {
     final theme = Theme.of(context);
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
-      color: const Color(0xFF0A121A),
+      color: selected
+          ? AppColors.gold.withValues(alpha: .12)
+          : const Color(0xFF0A121A),
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(18),
-        side: BorderSide(color: const Color(0xFF33424E).withValues(alpha: .62)),
+        side: BorderSide(
+          color: selected
+              ? AppColors.gold.withValues(alpha: .9)
+              : const Color(0xFF33424E).withValues(alpha: .62),
+          width: selected ? 1.5 : 1,
+        ),
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
           final narrow = constraints.maxWidth < 370;
-          final coverWidth = narrow ? 54.0 : 70.0;
-          final coverHeight = narrow ? 66.0 : 78.0;
+          final coverWidth = narrow ? 69.0 : 86.0;
+          final coverHeight = narrow ? 84.0 : 96.0;
+          final positionText = position <= 5 ? '#$position' : '$position';
+          final positionWidth =
+              (narrow ? 26.0 : 32.0) +
+              (positionText.length > 2
+                  ? (positionText.length - 2) * (narrow ? 11.0 : 13.0)
+                  : 0.0);
+          final statusContentWidth = narrow ? 66.0 : 74.0;
           final positionColor = switch (position) {
             1 => AppColors.accent(context),
             2 => const Color(0xFFD4D9E2),
@@ -1030,10 +1232,11 @@ class GameCard extends StatelessWidget {
           return InkWell(
             borderRadius: BorderRadius.circular(18),
             onTap: onOpen,
+            onLongPress: onLongPress,
             child: Padding(
               padding: EdgeInsets.symmetric(
                 horizontal: narrow ? 5 : 8,
-                vertical: 5,
+                vertical: 6,
               ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
@@ -1042,38 +1245,34 @@ class GameCard extends StatelessWidget {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(
-                          position <= 5 ? '#$position' : '$position',
-                          textAlign: TextAlign.center,
-                          style: theme.textTheme.titleSmall?.copyWith(
-                            color: positionColor,
-                            fontWeight: FontWeight.w900,
-                            fontSize: narrow ? 17 : 21,
+                        SizedBox(
+                          width: positionWidth,
+                          child: Text(
+                            positionText,
+                            maxLines: 1,
+                            softWrap: false,
+                            overflow: TextOverflow.visible,
+                            textAlign: TextAlign.center,
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              color: positionColor,
+                              fontWeight: FontWeight.w900,
+                              fontSize: narrow ? 17 : 21,
+                            ),
                           ),
                         ),
-                        SizedBox(width: narrow ? 6 : 9),
+                        SizedBox(width: narrow ? 5 : 7),
                         ClipRRect(
                           borderRadius: BorderRadius.circular(11),
                           child: SizedBox(
                             width: coverWidth,
                             height: coverHeight,
-                            child:
-                                game.coverUrl == null || game.coverUrl!.isEmpty
-                                ? _coverPlaceholder(context)
-                                : CachedNetworkImage(
-                                    imageUrl: game.coverUrl!,
-                                    fit: BoxFit.cover,
-                                    placeholder: (_, _) =>
-                                        _coverPlaceholder(context),
-                                    errorWidget: (_, _, _) =>
-                                        _coverPlaceholder(context),
-                                  ),
+                            child: GameCoverImage(game: game),
                           ),
                         ),
                       ],
                     ),
                   ),
-                  SizedBox(width: narrow ? 4 : 8),
+                  SizedBox(width: narrow ? 5 : 7),
                   Expanded(
                     child: Container(
                       child: Column(
@@ -1082,22 +1281,35 @@ class GameCard extends StatelessWidget {
                         children: [
                           Text(
                             game.name,
-                            maxLines: 1,
+                            maxLines: 2,
+                            softWrap: true,
                             overflow: TextOverflow.ellipsis,
                             style: theme.textTheme.titleSmall?.copyWith(
                               fontWeight: FontWeight.w800,
-                              fontSize: narrow ? 13 : 16,
+                              fontSize: narrow ? 14 : 17,
                             ),
                           ),
-                          const SizedBox(height: 4),
+                          const SizedBox(height: 6),
                           _PlatformLabel(game: game),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 3),
-                            child: Divider(
-                              height: 1,
-                              color: theme.colorScheme.outlineVariant
-                                  .withValues(alpha: .4),
-                            ),
+                          LayoutBuilder(
+                            builder: (context, constraints) {
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 4,
+                                ),
+                                child: Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: SizedBox(
+                                    width: constraints.maxWidth,
+                                    child: Divider(
+                                      height: 1,
+                                      color: theme.colorScheme.outlineVariant
+                                          .withValues(alpha: .4),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
                           ),
                           Row(
                             children: [
@@ -1122,64 +1334,74 @@ class GameCard extends StatelessWidget {
                       ),
                     ),
                   ),
-                  SizedBox(width: narrow ? 4 : 8),
+                  const SizedBox(width: 8),
                   Container(
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            if (game.rating != null)
-                              Container(
-                                padding: EdgeInsets.symmetric(
-                                  horizontal: narrow ? 5 : 8,
-                                  vertical: 5,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: AppColors.gold.withValues(alpha: .08),
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
+                        SizedBox(
+                          width: statusContentWidth,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              if (game.rating != null)
+                                Container(
+                                  padding: EdgeInsets.symmetric(
+                                    horizontal: narrow ? 5 : 8,
+                                    vertical: 5,
+                                  ),
+                                  decoration: BoxDecoration(
                                     color: AppColors.gold.withValues(
-                                      alpha: .78,
+                                      alpha: .08,
+                                    ),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: AppColors.gold.withValues(
+                                        alpha: .78,
+                                      ),
                                     ),
                                   ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.star_rounded,
+                                        color: AppColors.gold,
+                                        size: narrow ? 14 : 17,
+                                      ),
+                                      const SizedBox(width: 2),
+                                      Text(
+                                        game.rating!.toStringAsFixed(1),
+                                        style: theme.textTheme.labelLarge
+                                            ?.copyWith(
+                                              color: AppColors.gold,
+                                              fontWeight: FontWeight.w900,
+                                              fontSize: narrow ? 11 : 14,
+                                            ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.star_rounded,
-                                      color: AppColors.gold,
-                                      size: narrow ? 14 : 17,
-                                    ),
-                                    const SizedBox(width: 2),
-                                    Text(
-                                      game.rating!.toStringAsFixed(1),
-                                      style: theme.textTheme.labelLarge
-                                          ?.copyWith(
-                                            color: AppColors.gold,
-                                            fontWeight: FontWeight.w900,
-                                            fontSize: narrow ? 11 : 14,
-                                          ),
-                                    ),
-                                  ],
+                              if (game.status != null) ...[
+                                if (game.rating != null)
+                                  SizedBox(height: narrow ? 8 : 10),
+                                _StatusChip(
+                                  status: game.status!,
+                                  compact: narrow,
                                 ),
-                              ),
-                            if (game.status != null) ...[
-                              if (game.rating != null)
-                                SizedBox(height: narrow ? 6 : 8),
-                              _StatusChip(
-                                status: game.status!,
-                                compact: narrow,
-                              ),
+                              ],
                             ],
-                          ],
+                          ),
                         ),
                         SizedBox(width: narrow ? 4 : 7),
-                        _LibraryDragHandle(index: index, draggable: draggable),
+                        _LibraryDragHandle(
+                          index: index,
+                          draggable: draggable,
+                          selected: selected,
+                          selectionMode: selectionMode,
+                        ),
                       ],
                     ),
                   ),
@@ -1191,25 +1413,40 @@ class GameCard extends StatelessWidget {
       ),
     );
   }
-
-  Widget _coverPlaceholder(BuildContext context) => ColoredBox(
-    color: Theme.of(context).colorScheme.secondary.withValues(alpha: .2),
-    child: Icon(
-      Icons.videogame_asset_rounded,
-      color: Theme.of(context).colorScheme.primary,
-      size: 22,
-    ),
-  );
 }
 
 class _LibraryDragHandle extends StatelessWidget {
-  const _LibraryDragHandle({required this.index, required this.draggable});
+  const _LibraryDragHandle({
+    required this.index,
+    required this.draggable,
+    required this.selected,
+    required this.selectionMode,
+  });
 
   final int index;
   final bool draggable;
+  final bool selected;
+  final bool selectionMode;
 
   @override
   Widget build(BuildContext context) {
+    if (selectionMode) {
+      return Tooltip(
+        message: selected ? 'Selecionado' : 'Toque para selecionar',
+        child: SizedBox(
+          width: 26,
+          height: 46,
+          child: Icon(
+            selected
+                ? Icons.check_circle_rounded
+                : Icons.radio_button_unchecked_rounded,
+            size: 20,
+            color: selected ? AppColors.gold : AppColors.muted,
+          ),
+        ),
+      );
+    }
+
     final handle = Tooltip(
       message: draggable
           ? 'Arraste para reordenar'
@@ -1254,18 +1491,18 @@ class _PlatformLabel extends StatelessWidget {
         children: [
           Icon(
             icon,
-            size: 13,
+            size: 15,
             color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
-          const SizedBox(width: 3),
+          const SizedBox(width: 4),
           Flexible(
             child: Text(
               platformLabel(game.platformId),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
-                fontSize: 10,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),
@@ -1318,8 +1555,11 @@ class WishlistGameCard extends StatelessWidget {
     required this.position,
     required this.index,
     required this.draggable,
+    required this.selected,
+    required this.selectionMode,
     required this.onEdit,
     required this.onOpen,
+    required this.onLongPress,
     required this.onDelete,
     super.key,
   });
@@ -1328,8 +1568,11 @@ class WishlistGameCard extends StatelessWidget {
   final int position;
   final int index;
   final bool draggable;
+  final bool selected;
+  final bool selectionMode;
   final VoidCallback onEdit;
   final VoidCallback onOpen;
+  final VoidCallback onLongPress;
   final VoidCallback onDelete;
 
   @override
@@ -1337,16 +1580,22 @@ class WishlistGameCard extends StatelessWidget {
     final theme = Theme.of(context);
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
-      color: theme.colorScheme.surface,
+      color: selected
+          ? AppColors.gold.withValues(alpha: .12)
+          : theme.colorScheme.surface,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(18),
         side: BorderSide(
-          color: theme.colorScheme.outlineVariant.withValues(alpha: .3),
+          color: selected
+              ? AppColors.gold.withValues(alpha: .9)
+              : theme.colorScheme.outlineVariant.withValues(alpha: .3),
+          width: selected ? 1.5 : 1,
         ),
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(18),
         onTap: onOpen,
+        onLongPress: onLongPress,
         child: Padding(
           padding: const EdgeInsets.all(10),
           child: Row(
@@ -1369,16 +1618,7 @@ class WishlistGameCard extends StatelessWidget {
                 child: SizedBox(
                   width: 62,
                   height: 78,
-                  child: game.coverUrl == null || game.coverUrl!.isEmpty
-                      ? _wishlistCoverPlaceholder(context)
-                      : CachedNetworkImage(
-                          imageUrl: game.coverUrl!,
-                          fit: BoxFit.cover,
-                          placeholder: (_, _) =>
-                              _wishlistCoverPlaceholder(context),
-                          errorWidget: (_, _, _) =>
-                              _wishlistCoverPlaceholder(context),
-                        ),
+                  child: GameCoverImage(game: game),
                 ),
               ),
               const SizedBox(width: 12),
@@ -1422,27 +1662,41 @@ class WishlistGameCard extends StatelessWidget {
                   ],
                 ),
               ),
-              PopupMenuButton<String>(
-                tooltip: 'Opções do jogo',
-                onSelected: (value) => value == 'edit' ? onEdit() : onDelete(),
-                itemBuilder: (context) => const [
-                  PopupMenuItem(
-                    value: 'edit',
-                    child: ListTile(
-                      leading: Icon(Icons.edit_outlined),
-                      title: Text('Editar'),
+              if (!selectionMode)
+                PopupMenuButton<String>(
+                  tooltip: 'Opções do jogo',
+                  onSelected: (value) =>
+                      value == 'edit' ? onEdit() : onDelete(),
+                  itemBuilder: (context) => const [
+                    PopupMenuItem(
+                      value: 'edit',
+                      child: ListTile(
+                        leading: Icon(Icons.edit_outlined),
+                        title: Text('Editar'),
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'delete',
+                      child: ListTile(
+                        leading: Icon(Icons.delete_outline),
+                        title: Text('Excluir'),
+                      ),
+                    ),
+                  ],
+                ),
+              if (selectionMode)
+                SizedBox(
+                  width: 48,
+                  child: Center(
+                    child: Icon(
+                      selected
+                          ? Icons.check_circle_rounded
+                          : Icons.radio_button_unchecked_rounded,
+                      color: selected ? AppColors.gold : AppColors.muted,
                     ),
                   ),
-                  PopupMenuItem(
-                    value: 'delete',
-                    child: ListTile(
-                      leading: Icon(Icons.delete_outline),
-                      title: Text('Excluir'),
-                    ),
-                  ),
-                ],
-              ),
-              if (draggable)
+                )
+              else if (draggable)
                 ReorderableDragStartListener(
                   index: index,
                   child: const Padding(
@@ -1464,14 +1718,6 @@ class WishlistGameCard extends StatelessWidget {
       ),
     );
   }
-
-  Widget _wishlistCoverPlaceholder(BuildContext context) => ColoredBox(
-    color: Theme.of(context).colorScheme.secondary.withValues(alpha: .24),
-    child: Icon(
-      Icons.videogame_asset_rounded,
-      color: Theme.of(context).colorScheme.primary,
-    ),
-  );
 }
 
 class _WishlistPill extends StatelessWidget {
