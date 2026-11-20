@@ -1,6 +1,6 @@
 # MyGameList
 
-Aplicativo Flutter para organizar uma biblioteca pessoal de jogos e uma lista de desejos. Os dados do usuário são salvos localmente em SQLite com Drift, então o cadastro e a consulta da coleção funcionam offline. A pesquisa de metadados usa a API RAWG quando uma chave é configurada.
+Aplicativo Flutter para organizar uma biblioteca pessoal de jogos e uma lista de desejos. Os dados são salvos localmente em SQLite com Drift para uso offline e, após login, sincronizados com Firebase Auth e Cloud Firestore no Android. A pesquisa de metadados usa a API RAWG quando uma chave é configurada.
 
 ## Recursos
 
@@ -11,6 +11,7 @@ Aplicativo Flutter para organizar uma biblioteca pessoal de jogos e uma lista de
 - Pesquisa opcional no catálogo RAWG para preencher título, capa, plataformas e outros metadados. O formulário manual continua disponível sem chave ou conexão.
 - Atribuição com link para RAWG nas telas que exibem jogos importados do catálogo.
 - Vinculação de perfil Steam público e importação local da biblioteca, com horas jogadas e prevenção de duplicatas por título ou AppID.
+- Cadastro e login por e-mail/senha, com biblioteca isolada por conta e sincronização de jogos e preferências com Firestore.
 
 ## Requisitos
 
@@ -47,6 +48,32 @@ A integração RAWG consulta `GET /api/games` em páginas de até 20 resultados 
 
 Na tela Perfil, informe o SteamID64, a URL personalizada (`steamcommunity.com/id/...`) ou a URL numérica (`steamcommunity.com/profiles/...`) de um perfil público para importar a biblioteca. O perfil e os detalhes dos jogos precisam estar públicos. A importação inclui jogos gratuitos jogados, salva-os como PC/concluídos, mantém a nota vazia e transfere o tempo total de jogo em minutos. Jogos já cadastrados manualmente, via RAWG ou pela Steam são preservados e não são duplicados por nome normalizado ou AppID.
 
+## Configurar Firebase (Android)
+
+O app inicializa Firebase no Android com `android/app/google-services.json`. O arquivo fornecido está configurado para o package `com.example.mygamelist.my_game_list` e o projeto Firebase `mygamelist-d99cc`. O plugin Google Services processa esse arquivo durante o build.
+
+Antes de usar cadastro e sincronização, habilite **E-mail/senha** em **Authentication > Sign-in method** e crie um banco em **Firestore Database** no Firebase Console.
+
+Para publicar as regras, abra o terminal do VS Code na raiz deste repositório (a pasta que contém `firebase.json`). No Windows/PowerShell, instale o Firebase CLI uma vez e autentique sua conta Google:
+
+```powershell
+npm install -g firebase-tools
+firebase login
+firebase projects:list
+```
+
+Confirme que `mygamelist-d99cc` aparece na lista e execute na mesma pasta:
+
+```powershell
+firebase deploy --only firestore:rules --project mygamelist-d99cc
+```
+
+O deploy substitui as regras atualmente publicadas no projeto pelas regras locais de `firestore.rules`; se já houver regras próprias, combine-as antes de publicar.
+
+O app guarda primeiro os dados no SQLite. Ao criar conta ou entrar, importa uma vez a biblioteca local para a conta e sincroniza jogos, lista de desejos, posições e preferências em `users/{uid}`. Cada conta usa também um arquivo local separado. Alterações feitas sem conexão ficam na fila e são sincronizadas na próxima abertura online ou pelo botão de sincronização no Perfil. As regras permitem que cada conta leia e altere somente seus próprios documentos.
+
+O `google-services.json` configura apenas Android. Para ativar Firebase em iOS ou Web, registre essas plataformas no projeto e gere a configuração FlutterFire correspondente.
+
 ## Executar
 
 ```powershell
@@ -73,22 +100,20 @@ A suíte cobre navegação, ordenação e empates, persistência local, formulá
 - `lib/core/theme/`: temas claro/escuro e controle da preferência de aparência.
 - `lib/features/games/`: formulário, detalhes e repositório de jogos.
 - `lib/features/library/`: biblioteca, lista de desejos, filtros, ordenação e cabeçalho.
-- `lib/features/integrations/`: cliente RAWG, atribuição e contratos das integrações.
+- `lib/features/integrations/`: clientes RAWG, Firebase Auth/Firestore, atribuição e contratos das integrações.
 - `lib/features/settings/`: perfil, aparência e estado das integrações.
 - `test/`: testes organizados por área do app.
 - `assets/images/img_fundo.webp`: imagem local usada no cabeçalho da Biblioteca.
 - `config/rawg.example.json`: exemplo de configuração da chave RAWG.
 
-## Próximos passos: Firebase, ajustes e Epic Games
+## Próximos passos
 
-O schema local, definido em SQL em `lib/core/database/app_database.dart`, contém as tabelas `games`, `sync_operations` e `app_preferences` e está na versão 1. O ID RAWG é armazenado em `external_game_id`; `source_game_id` guarda o slug usado no link para o jogo no site da RAWG. A implementação atual reutiliza esses campos e não exige migração.
+O schema local, definido em SQL em `lib/core/database/app_database.dart`, contém as tabelas `games`, `sync_operations` e `app_preferences` e está na versão 1. O ID RAWG é armazenado em `external_game_id`; `source_game_id` guarda o slug usado no link para o jogo no site da RAWG.
 
-O próximo marco é levar os dados do app para a nuvem e concluir os fluxos que ainda precisam de ajustes. Estes itens continuam pendentes:
+- [x] **Firebase Auth e Firestore no Android:** cadastro/login por e-mail, dados locais isolados por conta, migração inicial da biblioteca local e sincronização offline-first de jogos e preferências.
+- [ ] **Configuração operacional do Firebase:** habilitar E-mail/senha, criar Firestore Database e publicar `firestore.rules` no projeto `mygamelist-d99cc`.
+- [ ] **Outras plataformas Firebase:** registrar iOS/Web e gerar as configurações FlutterFire correspondentes.
+- [ ] **Refinar a nota** nas telas de cadastro e edição e revisar os fluxos da tela Perfil e da Lista de Desejos.
+- [ ] **Integrar a Epic Games**, incluindo associação da conta e importação da biblioteca, preservando cadastro manual, RAWG e Steam.
 
-- [ ] **Integrar o app com Firebase** para autenticação e persistência/sincronização online da biblioteca, lista de desejos, notas, status, horas jogadas, posições e preferências. A fila local `sync_operations` deverá ser processada para enviar alterações ao serviço remoto e receber atualizações, mantendo o uso offline.
-- [ ] **Refinar o campo de nota** nas telas de cadastro e edição de jogos, incluindo a interação de seleção e a apresentação do valor carregado e salvo.
-- [ ] **Ajustar a tela de Perfil** e concluir o fluxo de associação/sincronização das integrações, salvando online os dados de perfil que devem acompanhar a conta.
-- [ ] **Ajustar a Lista de Desejos** e garantir que seus jogos, ordenação e alterações também façam parte da sincronização com Firebase.
-- [ ] **Integrar a Epic Games**, incluindo a associação da conta e a importação da biblioteca, sem remover o cadastro manual, o catálogo RAWG ou a importação Steam.
-
-**Estado atual:** jogos e preferências ainda ficam salvos localmente no SQLite/Drift. O perfil Steam é associado localmente por URL/SteamID e consultado pela Web API; a autenticação OpenID Steam e a sincronização Firestore ainda não estão configuradas. A importação Steam funciona apenas para dados visíveis de perfis públicos. A integração Epic Games ainda não foi implementada. As dependências Firebase no `pubspec.yaml`, por si só, não configuram um projeto Firebase; este repositório ainda não tem sincronização remota ou Cloud Functions configuradas.
+O perfil Steam e as preferências passam a acompanhar a conta pelo Firestore; a importação Steam ainda depende de um perfil público e de uma chave Web API. A integração Epic Games continua pendente. O login social Google/Steam/Epic também não está incluído neste fluxo; a autenticação implementada usa e-mail e senha.

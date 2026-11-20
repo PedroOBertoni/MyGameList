@@ -1,24 +1,47 @@
 import 'dart:convert';
+import 'dart:async';
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../database/app_database.dart';
 import '../models/game.dart';
 import '../theme/theme_controller.dart';
 import '../../features/integrations/integration_contracts.dart';
+import '../../features/integrations/firebase_gateways.dart';
 import '../../features/integrations/rawg_catalog_gateway.dart';
 import '../../features/integrations/steam_library_importer.dart';
 import '../../features/games/data/game_repository.dart';
 
-final databaseProvider = FutureProvider<AppDatabase>((ref) async {
+final firebaseInitializedProvider = Provider<bool>((ref) => false);
+
+final authStateProvider = StreamProvider<User?>((ref) {
+  if (!ref.watch(firebaseInitializedProvider)) return Stream.value(null);
+  return FirebaseAuth.instance.authStateChanges();
+});
+
+final guestDatabaseProvider = FutureProvider<AppDatabase>((ref) async {
   final database = AppDatabase();
+  ref.onDispose(() => database.close());
+  return database;
+});
+
+final databaseProvider = FutureProvider<AppDatabase>((ref) async {
+  final authState = ref.watch(authStateProvider);
+  final user = authState.asData?.value;
+  if (user == null) return ref.watch(guestDatabaseProvider.future);
+
+  final database = AppDatabase.named(name: 'my_game_list_user_${user.uid}');
   ref.onDispose(() => database.close());
   return database;
 });
 
 final gameRepositoryProvider = FutureProvider<GameRepository>((ref) async {
   final database = await ref.watch(databaseProvider.future);
-  return DriftGameRepository(database);
+  return DriftGameRepository(
+    database,
+    onMutation: () => syncCurrentAccountFromRef(ref),
+  );
 });
 
 final gamesProvider = FutureProvider.family<List<Game>, GameListType>(
@@ -31,10 +54,13 @@ final gameProvider = FutureProvider.family<Game?, String>(
       (await ref.watch(gameRepositoryProvider.future)).getGame(id),
 );
 
-final pendingOperationCountProvider = FutureProvider<int>(
-  (ref) async =>
-      (await ref.watch(gameRepositoryProvider.future)).pendingOperationCount,
-);
+final pendingOperationCountProvider = FutureProvider<int>((ref) async {
+  if (!ref.watch(firebaseInitializedProvider) ||
+      ref.watch(authStateProvider).asData?.value == null) {
+    return 0;
+  }
+  return (await ref.watch(gameRepositoryProvider.future)).pendingOperationCount;
+});
 
 class ListPreferences {
   const ListPreferences({required this.sortMode, required this.tieOrders});
@@ -82,9 +108,12 @@ final catalogGatewayProvider = Provider<GameCatalogGateway>((ref) {
   return gateway;
 });
 
-final authGatewayProvider = Provider<AuthGateway>(
-  (ref) => const UnconfiguredAuthGateway(),
-);
+final authGatewayProvider = Provider<AuthGateway>((ref) {
+  if (!ref.watch(firebaseInitializedProvider)) {
+    return const UnconfiguredAuthGateway();
+  }
+  return FirebaseAuthGateway(FirebaseAuth.instance);
+});
 
 final platformLibraryImporterProvider = Provider<PlatformLibraryImporter>((
   ref,
@@ -94,6 +123,119 @@ final platformLibraryImporterProvider = Provider<PlatformLibraryImporter>((
   return importer;
 });
 
-final syncBackendProvider = Provider<SyncBackend>(
-  (ref) => const UnconfiguredSyncBackend(),
-);
+final syncBackendProvider = Provider<SyncBackend>((ref) {
+  if (!ref.watch(firebaseInitializedProvider)) {
+    return const UnconfiguredSyncBackend();
+  }
+  final user = ref.watch(authStateProvider).asData?.value;
+  final database = ref.watch(databaseProvider).asData?.value;
+  if (user == null || database == null) {
+    return const UnconfiguredSyncBackend();
+  }
+  return FirebaseSyncBackend(database: database, userId: user.uid);
+});
+
+final Map<String, Future<void>> _accountSyncFlights = {};
+final Set<String> _syncRequestedAgain = {};
+
+Future<void> syncCurrentAccountFromRef(Ref ref, {User? user}) =>
+    _syncCurrentAccount(
+      firebaseEnabled: ref.read(firebaseInitializedProvider),
+      user: user ?? ref.read(authStateProvider).asData?.value,
+      loadDatabase: () => ref.read(databaseProvider.future),
+      loadGuestDatabase: () => ref.read(guestDatabaseProvider.future),
+      invalidateData: () {
+        ref.invalidate(gamesProvider);
+        ref.invalidate(gameProvider);
+        ref.invalidate(listPreferencesProvider);
+        ref.invalidate(pendingOperationCountProvider);
+      },
+    );
+
+Future<void> syncCurrentAccountFromWidgetRef(WidgetRef ref, {User? user}) =>
+    _syncCurrentAccount(
+      firebaseEnabled: ref.read(firebaseInitializedProvider),
+      user: user ?? ref.read(authStateProvider).asData?.value,
+      loadDatabase: () => ref.read(databaseProvider.future),
+      loadGuestDatabase: () => ref.read(guestDatabaseProvider.future),
+      invalidateData: () {
+        ref.invalidate(gamesProvider);
+        ref.invalidate(gameProvider);
+        ref.invalidate(listPreferencesProvider);
+        ref.invalidate(pendingOperationCountProvider);
+      },
+    );
+
+Future<void> _syncCurrentAccount({
+  required bool firebaseEnabled,
+  required User? user,
+  required Future<AppDatabase> Function() loadDatabase,
+  required Future<AppDatabase> Function() loadGuestDatabase,
+  required void Function() invalidateData,
+}) async {
+  if (!firebaseEnabled) return;
+  final signedInUser = user;
+  if (signedInUser == null) return;
+
+  final existingFlight = _accountSyncFlights[signedInUser.uid];
+  if (existingFlight != null) {
+    _syncRequestedAgain.add(signedInUser.uid);
+    return existingFlight;
+  }
+
+  final flight = _syncAccountData(
+    signedInUser,
+    loadDatabase: loadDatabase,
+    loadGuestDatabase: loadGuestDatabase,
+    invalidateData: invalidateData,
+  );
+  _accountSyncFlights[signedInUser.uid] = flight;
+  try {
+    await flight;
+  } finally {
+    if (identical(_accountSyncFlights[signedInUser.uid], flight)) {
+      _accountSyncFlights.remove(signedInUser.uid);
+    }
+    if (_syncRequestedAgain.remove(signedInUser.uid)) {
+      await _syncCurrentAccount(
+        firebaseEnabled: firebaseEnabled,
+        user: signedInUser,
+        loadDatabase: loadDatabase,
+        loadGuestDatabase: loadGuestDatabase,
+        invalidateData: invalidateData,
+      );
+    }
+  }
+}
+
+Future<void> _syncAccountData(
+  User user, {
+  required Future<AppDatabase> Function() loadDatabase,
+  required Future<AppDatabase> Function() loadGuestDatabase,
+  required void Function() invalidateData,
+}) async {
+  final database = await loadDatabase();
+  final guestDatabase = await loadGuestDatabase();
+  final syncBackend = FirebaseSyncBackend(database: database, userId: user.uid);
+
+  const guestMigrationKey = 'internal.guest_data_imported_v1';
+  final needsGuestMigration =
+      await guestDatabase.readPreference(guestMigrationKey) != 'true';
+  if (needsGuestMigration) {
+    // Pull the account's existing library first so it wins over stale guest copies.
+    // If Firestore is temporarily unreachable, still migrate locally and keep the
+    // queued writes for the next online sync.
+    try {
+      await syncBackend.syncPendingChanges();
+    } catch (_) {
+      // The second sync below reports and retains any pending cloud failure.
+    }
+    await database.importGuestDataOnce(guestDatabase);
+    invalidateData();
+  }
+  try {
+    await syncBackend.syncPendingChanges();
+  } finally {
+    invalidateData();
+  }
+}

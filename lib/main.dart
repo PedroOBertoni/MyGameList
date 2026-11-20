@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:firebase_core/firebase_core.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -5,9 +8,24 @@ import 'core/providers/app_providers.dart';
 import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const ProviderScope(child: MyGameListApp()));
+  var firebaseInitialized = false;
+  try {
+    await Firebase.initializeApp();
+    firebaseInitialized = true;
+  } catch (error) {
+    debugPrint('Firebase não foi inicializado neste dispositivo: $error');
+  }
+
+  runApp(
+    ProviderScope(
+      overrides: [
+        firebaseInitializedProvider.overrideWithValue(firebaseInitialized),
+      ],
+      child: const MyGameListApp(),
+    ),
+  );
 }
 
 class MyGameListApp extends ConsumerWidget {
@@ -15,6 +33,19 @@ class MyGameListApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.listen(authStateProvider, (previous, next) {
+      next.whenData((user) {
+        if (user != null) {
+          unawaited(
+            syncCurrentAccountFromWidgetRef(ref, user: user).catchError((
+              Object error,
+            ) {
+              debugPrint('Falha ao sincronizar dados Firebase: $error');
+            }),
+          );
+        }
+      });
+    });
     final router = ref.watch(routerProvider);
     final theme = ref.watch(themeControllerProvider);
     return ListenableBuilder(

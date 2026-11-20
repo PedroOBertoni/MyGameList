@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../providers/app_providers.dart';
 import '../theme/app_theme.dart';
@@ -18,6 +19,8 @@ class _SyncStatusBannerState extends ConsumerState<SyncStatusBanner> {
   @override
   Widget build(BuildContext context) {
     final pending = ref.watch(pendingOperationCountProvider);
+    final firebaseReady = ref.watch(firebaseInitializedProvider);
+    final signedIn = ref.watch(authStateProvider).asData?.value != null;
     return pending.when(
       data: (count) {
         if (count == 0 || _dismissed) return const SizedBox.shrink();
@@ -54,7 +57,11 @@ class _SyncStatusBannerState extends ConsumerState<SyncStatusBanner> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          '$count ${count == 1 ? 'alteração pendente' : 'alterações pendentes'} · Firebase não configurado',
+                          '$count ${count == 1 ? 'alteração pendente' : 'alterações pendentes'} · ${!firebaseReady
+                              ? 'Firebase indisponível'
+                              : signedIn
+                              ? 'Conta conectada'
+                              : 'Faça login para sincronizar'}',
                           style: Theme.of(context).textTheme.labelSmall
                               ?.copyWith(
                                 color: colors.primary,
@@ -76,14 +83,24 @@ class _SyncStatusBannerState extends ConsumerState<SyncStatusBanner> {
               SizedBox(
                 height: 38,
                 child: FilledButton.tonalIcon(
-                  onPressed: _trying ? null : _trySync,
+                  onPressed: _trying
+                      ? null
+                      : signedIn && firebaseReady
+                      ? _trySync
+                      : () => context.go('/settings'),
                   icon: _trying
                       ? const SizedBox.square(
                           dimension: 16,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : const Icon(Icons.sync_rounded, size: 18),
-                  label: Text(_trying ? 'Verificando…' : 'Sincronizar agora'),
+                  label: Text(
+                    _trying
+                        ? 'Sincronizando…'
+                        : signedIn && firebaseReady
+                        ? 'Sincronizar agora'
+                        : 'Conta e sincronização',
+                  ),
                 ),
               ),
             ],
@@ -99,12 +116,11 @@ class _SyncStatusBannerState extends ConsumerState<SyncStatusBanner> {
     setState(() => _trying = true);
     String message;
     try {
-      await ref.read(syncBackendProvider).syncPendingChanges();
-      ref.invalidate(pendingOperationCountProvider);
+      await syncCurrentAccountFromWidgetRef(ref);
       message = 'Sincronização concluída.';
     } catch (_) {
       message =
-          'Firebase ainda não está configurado. Seus dados seguem salvos neste dispositivo.';
+          'Não foi possível sincronizar agora. Seus dados seguem salvos neste dispositivo.';
     }
     if (!mounted) return;
     setState(() => _trying = false);

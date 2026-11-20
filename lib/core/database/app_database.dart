@@ -12,6 +12,9 @@ class AppDatabase extends GeneratedDatabase {
   AppDatabase([QueryExecutor? executor])
     : super(executor ?? driftDatabase(name: 'my_game_list'));
 
+  AppDatabase.named({required String name, QueryExecutor? executor})
+    : super(executor ?? driftDatabase(name: name));
+
   static const _uuid = Uuid();
 
   @override
@@ -187,7 +190,10 @@ class AppDatabase extends GeneratedDatabase {
           variables: [Variable.withString(id)],
         ).get();
         if (deletedRows.isNotEmpty) {
-          await _queueGame(Game.fromRow(deletedRows.first.data), type: 'delete');
+          await _queueGame(
+            Game.fromRow(deletedRows.first.data),
+            type: 'delete',
+          );
         }
       }
     });
@@ -250,6 +256,14 @@ class AppDatabase extends GeneratedDatabase {
   }
 
   Future<void> _queueGame(Game game, {required String type}) async {
+    await _queueOperation(game.id, type, jsonEncode(game.toJson()));
+  }
+
+  Future<void> _queueOperation(
+    String entityId,
+    String type,
+    String payload,
+  ) async {
     final now = DateTime.now().toUtc().toIso8601String();
     await customStatement(
       '''
@@ -264,7 +278,7 @@ class AppDatabase extends GeneratedDatabase {
         last_error = NULL,
         sync_status = 'pending'
     ''',
-      [_uuid.v4(), game.id, type, jsonEncode(game.toJson()), now],
+      [_uuid.v4(), entityId, type, payload, now],
     );
   }
 
@@ -291,15 +305,247 @@ class AppDatabase extends GeneratedDatabase {
   }
 
   Future<void> writePreference(String key, String value) async {
-    await customStatement(
-      '''
+    final updatedAt = DateTime.now().toUtc().toIso8601String();
+    await transaction(() async {
+      await _writePreferenceLocally(key, value, updatedAt);
+      await _queueOperation(
+        'preference:$key',
+        'preference',
+        jsonEncode({'key': key, 'value': value, 'updatedAt': updatedAt}),
+      );
+    });
+  }
+
+  Future<List<Map<String, Object?>>> getAllPreferences() async {
+    final rows = await customSelect('SELECT * FROM app_preferences').get();
+    return rows.map((row) => row.data).toList();
+  }
+
+  Future<void> applyRemotePreference({
+    required String key,
+    required String value,
+    required String updatedAt,
+  }) async {
+    final entityId = 'preference:$key';
+    final pendingRows = await customSelect(
+      "SELECT 1 FROM sync_operations WHERE entity_id = ? AND sync_status != 'synced' LIMIT 1",
+      variables: [Variable.withString(entityId)],
+    ).get();
+    if (pendingRows.isNotEmpty) return;
+
+    final localRows = await customSelect(
+      'SELECT updated_at FROM app_preferences WHERE preference_key = ? LIMIT 1',
+      variables: [Variable.withString(key)],
+    ).get();
+    if (localRows.isNotEmpty) {
+      final localUpdatedAt = DateTime.tryParse(
+        localRows.first.data['updated_at']! as String,
+      );
+      final remoteUpdatedAt = DateTime.tryParse(updatedAt);
+      if (localUpdatedAt != null &&
+          remoteUpdatedAt != null &&
+          !remoteUpdatedAt.isAfter(localUpdatedAt)) {
+        return;
+      }
+    }
+    await _writePreferenceLocally(key, value, updatedAt);
+  }
+
+  Future<void> _writePreferenceLocally(
+    String key,
+    String value,
+    String updatedAt,
+  ) => customStatement(
+    '''
       INSERT INTO app_preferences(preference_key, preference_value, updated_at)
       VALUES (?, ?, ?)
       ON CONFLICT(preference_key) DO UPDATE SET
         preference_value = excluded.preference_value, updated_at = excluded.updated_at
     ''',
-      [key, value, DateTime.now().toUtc().toIso8601String()],
+    [key, value, updatedAt],
+  );
+
+  Future<void> markSyncOperationSynced({
+    required String operationId,
+    required String entityId,
+  }) async {
+    await transaction(() async {
+      final rows = await customSelect(
+        'SELECT operation_type FROM sync_operations WHERE entity_id = ? AND operation_id = ? LIMIT 1',
+        variables: [
+          Variable.withString(entityId),
+          Variable.withString(operationId),
+        ],
+      ).get();
+      if (rows.isEmpty) return;
+
+      final operationType = rows.first.data['operation_type']! as String;
+      await customStatement(
+        'DELETE FROM sync_operations WHERE entity_id = ? AND operation_id = ?',
+        [entityId, operationId],
+      );
+      if (operationType != 'preference') {
+        await customStatement(
+          "UPDATE games SET local_sync_status = 'synced' WHERE id = ?",
+          [entityId],
+        );
+      }
+    });
+  }
+
+  Future<void> markSyncOperationFailed({
+    required String operationId,
+    required String error,
+  }) => customStatement(
+    '''
+      UPDATE sync_operations
+      SET attempt_count = attempt_count + 1, last_error = ?
+      WHERE operation_id = ?
+    ''',
+    [error, operationId],
+  );
+
+  Future<void> applyRemoteGame(Map<String, Object?> data) async {
+    final id = data['id'] as String?;
+    final name = data['name'] as String?;
+    final platformId = data['platformId'] as String?;
+    final listType = data['listType'] as String?;
+    final updatedAt = data['updatedAt'] as String?;
+    if (id == null ||
+        name == null ||
+        platformId == null ||
+        listType == null ||
+        updatedAt == null ||
+        !GameListType.values.any((value) => value.name == listType)) {
+      return;
+    }
+
+    final pendingRows = await customSelect(
+      "SELECT 1 FROM sync_operations WHERE entity_id = ? AND sync_status != 'synced' LIMIT 1",
+      variables: [Variable.withString(id)],
+    ).get();
+    if (pendingRows.isNotEmpty) return;
+
+    final localRows = await customSelect(
+      'SELECT updated_at FROM games WHERE id = ? LIMIT 1',
+      variables: [Variable.withString(id)],
+    ).get();
+    if (localRows.isNotEmpty) {
+      final localUpdatedAt = DateTime.tryParse(
+        localRows.first.data['updated_at']! as String,
+      );
+      final remoteUpdatedAt = DateTime.tryParse(updatedAt);
+      if (localUpdatedAt != null &&
+          remoteUpdatedAt != null &&
+          !remoteUpdatedAt.isAfter(localUpdatedAt)) {
+        return;
+      }
+    }
+
+    final source = data['source'] as String? ?? GameSource.manual.name;
+    final status = data['status'] as String?;
+    final createdAt = data['createdAt'] as String? ?? updatedAt;
+    final remoteVersion = data['remoteVersion'] as int? ?? 1;
+    final deletedAt = data['deletedAt'] as String?;
+    await customStatement(
+      '''
+      INSERT INTO games (
+        id, external_game_id, source, source_game_id, name, cover_url,
+        platform_id, rating, playtime_minutes, start_date, completion_date,
+        status, list_type, manual_position, created_at, updated_at, deleted_at,
+        local_sync_status, remote_version
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'synced', ?)
+      ON CONFLICT(id) DO UPDATE SET
+        external_game_id = excluded.external_game_id,
+        source = excluded.source,
+        source_game_id = excluded.source_game_id,
+        name = excluded.name,
+        cover_url = excluded.cover_url,
+        platform_id = excluded.platform_id,
+        rating = excluded.rating,
+        playtime_minutes = excluded.playtime_minutes,
+        start_date = excluded.start_date,
+        completion_date = excluded.completion_date,
+        status = excluded.status,
+        list_type = excluded.list_type,
+        manual_position = excluded.manual_position,
+        created_at = excluded.created_at,
+        updated_at = excluded.updated_at,
+        deleted_at = excluded.deleted_at,
+        local_sync_status = 'synced',
+        remote_version = excluded.remote_version
+      ''',
+      [
+        id,
+        data['externalGameId'],
+        source,
+        data['sourceGameId'],
+        name,
+        data['coverUrl'],
+        platformId,
+        (data['rating'] as num?)?.toDouble(),
+        (data['playtimeMinutes'] as num?)?.toInt(),
+        data['startDate'],
+        data['completionDate'],
+        status,
+        listType,
+        (data['manualPosition'] as num?)?.toInt() ?? 0,
+        createdAt,
+        updatedAt,
+        deletedAt,
+        remoteVersion,
+      ],
     );
+  }
+
+  Future<int> importGuestDataOnce(AppDatabase guestDatabase) async {
+    const migrationKey = 'internal.guest_data_imported_v1';
+    if (await guestDatabase.readPreference(migrationKey) == 'true') return 0;
+
+    var importedGames = 0;
+    for (final listType in GameListType.values) {
+      final games = await guestDatabase.getGames(listType);
+      for (final game in games) {
+        final existingRows = await customSelect(
+          'SELECT id FROM games WHERE id = ? LIMIT 1',
+          variables: [Variable.withString(game.id)],
+        ).get();
+        if (existingRows.isNotEmpty) continue;
+        await saveGame(
+          GameDraft(
+            name: game.name,
+            platformId: game.platformId,
+            listType: game.listType,
+            source: game.source,
+            externalGameId: game.externalGameId,
+            sourceGameId: game.sourceGameId,
+            coverUrl: game.coverUrl,
+            rating: game.rating,
+            playtimeMinutes: game.playtimeMinutes,
+            startDate: game.startDate,
+            completionDate: game.completionDate,
+            status: game.status,
+          ),
+          id: game.id,
+        );
+        importedGames++;
+      }
+    }
+
+    for (final preference in await guestDatabase.getAllPreferences()) {
+      final key = preference['preference_key']! as String;
+      if (key.startsWith('internal.')) continue;
+      if (await readPreference(key) == null) {
+        await writePreference(key, preference['preference_value']! as String);
+      }
+    }
+
+    await guestDatabase._writePreferenceLocally(
+      migrationKey,
+      'true',
+      DateTime.now().toUtc().toIso8601String(),
+    );
+    return importedGames;
   }
 
   static String? _emptyToNull(String? value) {
