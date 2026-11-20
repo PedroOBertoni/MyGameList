@@ -192,7 +192,7 @@ class RawgCatalogGateway implements GameCatalogGateway {
   void _requireApiKey() {
     if (_apiKey.trim().isEmpty || _apiKey == 'INSERIR_CHAVE_AQUI') {
       throw const IntegrationNotConfiguredException(
-        'Chave RAWG ausente. Configure RAWG_API_KEY em config/rawg.local.json e reinicie o app',
+        'RAWG_API_KEY não foi passada ao app. Inicie pelo perfil MyGameList (catálogos) no VS Code ou use flutter run --dart-define-from-file=config/rawg.local.json; o Flutter não carrega .env automaticamente.',
       );
     }
   }

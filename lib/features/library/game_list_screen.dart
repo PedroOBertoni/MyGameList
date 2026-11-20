@@ -154,9 +154,7 @@ class _GameListScreenState extends ConsumerState<GameListScreen> {
             ),
           ),
         if (_selectionMode)
-          SliverToBoxAdapter(
-            child: _selectionToolbar(context, displayedGames),
-          ),
+          SliverToBoxAdapter(child: _selectionToolbar(context, displayedGames)),
         if (visible.isEmpty)
           SliverFillRemaining(
             hasScrollBody: false,
@@ -235,10 +233,7 @@ class _GameListScreenState extends ConsumerState<GameListScreen> {
     useImageBackground: true,
   );
 
-  Widget _selectionToolbar(
-    BuildContext context,
-    List<Game> allGames,
-  ) {
+  Widget _selectionToolbar(BuildContext context, List<Game> allGames) {
     final allGameIds = allGames.map((game) => game.id).toSet();
     final allGamesSelected =
         allGameIds.isNotEmpty && allGameIds.every(_selectedGameIds.contains);
@@ -274,9 +269,7 @@ class _GameListScreenState extends ConsumerState<GameListScreen> {
                       ? null
                       : () => _toggleGamesSelection(allGames),
                   child: Text(
-                    allGamesSelected
-                        ? 'Desmarcar todos'
-                        : 'Selecionar todos',
+                    allGamesSelected ? 'Desmarcar todos' : 'Selecionar todos',
                   ),
                 ),
                 IconButton(
@@ -301,8 +294,8 @@ class _GameListScreenState extends ConsumerState<GameListScreen> {
                 _batchDeleting
                     ? 'Excluindo…'
                     : count == 1
-                        ? 'Excluir 1 jogo'
-                        : 'Excluir $count jogos',
+                    ? 'Excluir 1 jogo'
+                    : 'Excluir $count jogos',
               ),
             ),
           ],
@@ -1241,169 +1234,159 @@ class GameCard extends StatelessWidget {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  Container(
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        SizedBox(
-                          width: positionWidth,
-                          child: Text(
-                            positionText,
-                            maxLines: 1,
-                            softWrap: false,
-                            overflow: TextOverflow.visible,
-                            textAlign: TextAlign.center,
-                            style: theme.textTheme.titleSmall?.copyWith(
-                              color: positionColor,
-                              fontWeight: FontWeight.w900,
-                              fontSize: narrow ? 17 : 21,
-                            ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        width: positionWidth,
+                        child: Text(
+                          positionText,
+                          maxLines: 1,
+                          softWrap: false,
+                          overflow: TextOverflow.visible,
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            color: positionColor,
+                            fontWeight: FontWeight.w900,
+                            fontSize: narrow ? 17 : 21,
                           ),
                         ),
-                        SizedBox(width: narrow ? 5 : 7),
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(11),
-                          child: SizedBox(
-                            width: coverWidth,
-                            height: coverHeight,
-                            child: GameCoverImage(game: game),
-                          ),
+                      ),
+                      SizedBox(width: narrow ? 5 : 7),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(11),
+                        child: SizedBox(
+                          width: coverWidth,
+                          height: coverHeight,
+                          child: GameCoverImage(game: game),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                   SizedBox(width: narrow ? 5 : 7),
                   Expanded(
-                    child: Container(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            game.name,
-                            maxLines: 2,
-                            softWrap: true,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.titleSmall?.copyWith(
-                              fontWeight: FontWeight.w800,
-                              fontSize: narrow ? 14 : 17,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          _PlatformLabel(game: game),
-                          LayoutBuilder(
-                            builder: (context, constraints) {
-                              return Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 4,
-                                ),
-                                child: Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: SizedBox(
-                                    width: constraints.maxWidth,
-                                    child: Divider(
-                                      height: 1,
-                                      color: theme.colorScheme.outlineVariant
-                                          .withValues(alpha: .4),
-                                    ),
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.schedule_rounded,
-                                size: 15,
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                game.playtimeMinutes == null
-                                    ? '— h'
-                                    : '${game.playtimeHours!.toStringAsFixed(game.playtimeHours! % 1 == 0 ? 0 : 1)}h',
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: theme.colorScheme.onSurfaceVariant,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Container(
-                    child: Row(
+                    child: Column(
                       mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        SizedBox(
-                          width: statusContentWidth,
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              if (game.rating != null)
-                                Container(
-                                  padding: EdgeInsets.symmetric(
-                                    horizontal: narrow ? 5 : 8,
-                                    vertical: 5,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.gold.withValues(
-                                      alpha: .08,
-                                    ),
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
-                                      color: AppColors.gold.withValues(
-                                        alpha: .78,
-                                      ),
-                                    ),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        Icons.star_rounded,
-                                        color: AppColors.gold,
-                                        size: narrow ? 14 : 17,
-                                      ),
-                                      const SizedBox(width: 2),
-                                      Text(
-                                        game.rating!.toStringAsFixed(1),
-                                        style: theme.textTheme.labelLarge
-                                            ?.copyWith(
-                                              color: AppColors.gold,
-                                              fontWeight: FontWeight.w900,
-                                              fontSize: narrow ? 11 : 14,
-                                            ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              if (game.status != null) ...[
-                                if (game.rating != null)
-                                  SizedBox(height: narrow ? 8 : 10),
-                                _StatusChip(
-                                  status: game.status!,
-                                  compact: narrow,
-                                ),
-                              ],
-                            ],
+                        Text(
+                          game.name,
+                          maxLines: 2,
+                          softWrap: true,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            fontSize: narrow ? 14 : 17,
                           ),
                         ),
-                        SizedBox(width: narrow ? 4 : 7),
-                        _LibraryDragHandle(
-                          index: index,
-                          draggable: draggable,
-                          selected: selected,
-                          selectionMode: selectionMode,
+                        const SizedBox(height: 6),
+                        _PlatformLabel(game: game),
+                        LayoutBuilder(
+                          builder: (context, constraints) {
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 4),
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: SizedBox(
+                                  width: constraints.maxWidth,
+                                  child: Divider(
+                                    height: 1,
+                                    color: theme.colorScheme.outlineVariant
+                                        .withValues(alpha: .4),
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.schedule_rounded,
+                              size: 15,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              game.playtimeMinutes == null
+                                  ? '— h'
+                                  : '${game.playtimeHours!.toStringAsFixed(game.playtimeHours! % 1 == 0 ? 0 : 1)}h',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
+                  ),
+                  const SizedBox(width: 8),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      SizedBox(
+                        width: statusContentWidth,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            if (game.rating != null)
+                              Container(
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: narrow ? 5 : 8,
+                                  vertical: 5,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: AppColors.gold.withValues(alpha: .08),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: AppColors.gold.withValues(
+                                      alpha: .78,
+                                    ),
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.star_rounded,
+                                      color: AppColors.gold,
+                                      size: narrow ? 14 : 17,
+                                    ),
+                                    const SizedBox(width: 2),
+                                    Text(
+                                      game.rating!.toStringAsFixed(1),
+                                      style: theme.textTheme.labelLarge
+                                          ?.copyWith(
+                                            color: AppColors.gold,
+                                            fontWeight: FontWeight.w900,
+                                            fontSize: narrow ? 11 : 14,
+                                          ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            if (game.status != null) ...[
+                              if (game.rating != null)
+                                SizedBox(height: narrow ? 8 : 10),
+                              _StatusChip(
+                                status: game.status!,
+                                compact: narrow,
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      SizedBox(width: narrow ? 4 : 7),
+                      _LibraryDragHandle(
+                        index: index,
+                        draggable: draggable,
+                        selected: selected,
+                        selectionMode: selectionMode,
+                      ),
+                    ],
                   ),
                 ],
               ),

@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/models/game.dart';
 import '../../core/providers/app_providers.dart';
 import '../../core/theme/app_theme.dart';
-import '../integrations/integration_contracts.dart';
 import '../integrations/rawg_attribution_link.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -217,7 +216,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       'Dependências preparadas · projeto ainda não configurado',
                   state: 'Pendente',
                 ),
-                Divider(height: 1, indent: 58, endIndent: 16),
+                const Divider(height: 1, indent: 58, endIndent: 16),
                 const _IntegrationRow(
                   icon: Icons.search_rounded,
                   title: 'RAWG',
@@ -225,7 +224,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       'Pesquisa direta; configure a chave local para ativar',
                   state: 'Opcional',
                 ),
-                Divider(height: 1, indent: 58, endIndent: 16),
+                const Divider(height: 1, indent: 58, endIndent: 16),
                 _IntegrationRow(
                   icon: Icons.sports_esports_outlined,
                   title: 'Steam',
@@ -240,7 +239,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       ? 'Disponível'
                       : 'Vinculada',
                 ),
-                Divider(height: 1, indent: 58, endIndent: 16),
+                const Divider(height: 1, indent: 58, endIndent: 16),
                 const _IntegrationRow(
                   icon: Icons.gamepad_outlined,
                   title: 'Epic Games',

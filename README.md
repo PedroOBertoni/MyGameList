@@ -37,6 +37,8 @@ Aplicativo Flutter para organizar uma biblioteca pessoal de jogos e uma lista de
 
 Para compilar, passe a mesma opção ao comando de build, por exemplo `flutter build apk --dart-define-from-file=config/rawg.local.json` ou `flutter build web --release --dart-define-from-file=config/rawg.local.json`.
 
+No VS Code, use **Ctrl+Shift+B** para executar a tarefa padrão **MyGameList: Build APK**. Pelo menu **Terminal > Run Build Task**, também estão disponíveis as tarefas para App Bundle e Web; todas carregam `config/rawg.local.json` automaticamente. Comandos `flutter build` executados manualmente no terminal ainda precisam incluir `--dart-define-from-file=config/rawg.local.json`.
+
 A chave é incluída no aplicativo compilado e pode ser extraída do APK; não a trate como um segredo. Isso vale para as chaves RAWG e Steam. O arquivo `config/rawg.local.json` está no `.gitignore` e não deve ser publicado. Sem essas chaves, os catálogos externos ficam indisponíveis, mas o cadastro manual permanece disponível.
 
 O app não carrega arquivos `.env` automaticamente. A chave usada na execução e na compilação vem de `config/rawg.local.json` via `--dart-define-from-file`; `.env` também está ignorado pelo Git para evitar o envio acidental de chaves locais.
@@ -49,10 +51,10 @@ Na tela Perfil, informe o SteamID64, a URL personalizada (`steamcommunity.com/id
 
 ```powershell
 flutter pub get
-flutter run
+flutter run --dart-define-from-file=config/rawg.local.json
 ```
 
-Para usar a pesquisa RAWG e a importação Steam durante a execução, acrescente `--dart-define-from-file=config/rawg.local.json` a `flutter run`. Sem esse arquivo, os catálogos ficam desativados, mas o app pode ser usado para cadastrar jogos manualmente.
+No VS Code, a configuração **MyGameList (catálogos)** em Run and Debug passa esse arquivo automaticamente ao iniciar o app. O arquivo fornece as chaves de compilação RAWG e Steam; preencher apenas um `.env` não as disponibiliza ao Flutter. Sem a configuração, o cadastro manual continua disponível, mas as integrações não recebem suas chaves.
 
 ## Testes e análise estática
 
@@ -77,8 +79,16 @@ A suíte cobre navegação, ordenação e empates, persistência local, formulá
 - `assets/images/img_fundo.webp`: imagem local usada no cabeçalho da Biblioteca.
 - `config/rawg.example.json`: exemplo de configuração da chave RAWG.
 
-## Persistência e integrações pendentes
+## Próximos passos: Firebase, ajustes e Epic Games
 
 O schema local, definido em SQL em `lib/core/database/app_database.dart`, contém as tabelas `games`, `sync_operations` e `app_preferences` e está na versão 1. O ID RAWG é armazenado em `external_game_id`; `source_game_id` guarda o slug usado no link para o jogo no site da RAWG. A implementação atual reutiliza esses campos e não exige migração.
 
-O app não tem autenticação MyGameList nem sincronização remota configuradas. O perfil Steam é associado localmente por URL/SteamID e consultado pela Web API; a autenticação OpenID Steam e a sincronização Firestore ainda não estão configuradas. A importação funciona apenas para dados visíveis de perfis públicos. Epic Games ainda não tem método configurado. Alterações continuam salvas localmente e a fila de sincronização não é enviada a um servidor. As dependências Firebase no `pubspec.yaml`, por si só, não configuram um projeto Firebase. Não há backend ou Cloud Functions neste projeto.
+O próximo marco é levar os dados do app para a nuvem e concluir os fluxos que ainda precisam de ajustes. Estes itens continuam pendentes:
+
+- [ ] **Integrar o app com Firebase** para autenticação e persistência/sincronização online da biblioteca, lista de desejos, notas, status, horas jogadas, posições e preferências. A fila local `sync_operations` deverá ser processada para enviar alterações ao serviço remoto e receber atualizações, mantendo o uso offline.
+- [ ] **Refinar o campo de nota** nas telas de cadastro e edição de jogos, incluindo a interação de seleção e a apresentação do valor carregado e salvo.
+- [ ] **Ajustar a tela de Perfil** e concluir o fluxo de associação/sincronização das integrações, salvando online os dados de perfil que devem acompanhar a conta.
+- [ ] **Ajustar a Lista de Desejos** e garantir que seus jogos, ordenação e alterações também façam parte da sincronização com Firebase.
+- [ ] **Integrar a Epic Games**, incluindo a associação da conta e a importação da biblioteca, sem remover o cadastro manual, o catálogo RAWG ou a importação Steam.
+
+**Estado atual:** jogos e preferências ainda ficam salvos localmente no SQLite/Drift. O perfil Steam é associado localmente por URL/SteamID e consultado pela Web API; a autenticação OpenID Steam e a sincronização Firestore ainda não estão configuradas. A importação Steam funciona apenas para dados visíveis de perfis públicos. A integração Epic Games ainda não foi implementada. As dependências Firebase no `pubspec.yaml`, por si só, não configuram um projeto Firebase; este repositório ainda não tem sincronização remota ou Cloud Functions configuradas.

@@ -38,7 +38,6 @@ class OptionMenuField<T> extends StatelessWidget {
         labelText: label,
         prefixIcon: Icon(icon),
         suffixIcon: const Icon(Icons.arrow_drop_down_rounded),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
       ),
       child: Text(valueLabel, maxLines: 1, overflow: TextOverflow.ellipsis),
     ),

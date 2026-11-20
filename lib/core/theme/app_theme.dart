@@ -23,9 +23,24 @@ abstract final class AppSpace {
   static const lg = 24.0;
   static const xl = 32.0;
   static const radius = 20.0;
+  static const buttonRadius = 14.0;
+  static const primaryButtonHeight = 52.0;
+  static const primaryButtonPadding = EdgeInsets.symmetric(
+    horizontal: 24,
+    vertical: 12,
+  );
+  static const buttonShape = RoundedRectangleBorder(
+    borderRadius: BorderRadius.all(Radius.circular(buttonRadius)),
+  );
 }
 
 abstract final class AppTheme {
+  static ButtonStyle primaryActionButtonStyle() => FilledButton.styleFrom(
+    minimumSize: const Size.fromHeight(AppSpace.primaryButtonHeight),
+    padding: AppSpace.primaryButtonPadding,
+    shape: AppSpace.buttonShape,
+  );
+
   static ThemeData dark() {
     const scheme = ColorScheme(
       brightness: Brightness.dark,
@@ -94,6 +109,18 @@ abstract final class AppTheme {
         borderSide: BorderSide(color: scheme.primary, width: 1.4),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+    ),
+    filledButtonTheme: FilledButtonThemeData(
+      style: FilledButton.styleFrom(shape: AppSpace.buttonShape),
+    ),
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: OutlinedButton.styleFrom(shape: AppSpace.buttonShape),
+    ),
+    textButtonTheme: TextButtonThemeData(
+      style: TextButton.styleFrom(shape: AppSpace.buttonShape),
+    ),
+    elevatedButtonTheme: ElevatedButtonThemeData(
+      style: ElevatedButton.styleFrom(shape: AppSpace.buttonShape),
     ),
     chipTheme: ChipThemeData(
       side: BorderSide.none,

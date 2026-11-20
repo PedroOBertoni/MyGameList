@@ -94,9 +94,11 @@ class LibraryHeaderArt extends StatelessWidget {
                   ),
                   Material(
                     color: AppColors.gold,
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: BorderRadius.circular(AppSpace.buttonRadius),
                     child: InkWell(
-                      borderRadius: BorderRadius.circular(14),
+                      borderRadius: BorderRadius.circular(
+                        AppSpace.buttonRadius,
+                      ),
                       onTap: onAdd,
                       child: const SizedBox(
                         width: 42,

@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../../core/models/game.dart';
 import '../../core/providers/app_providers.dart';
+import '../../core/theme/app_theme.dart';
 import '../../core/widgets/game_cover_image.dart';
 import '../integrations/rawg_attribution_link.dart';
 
@@ -18,13 +19,16 @@ class GameDetailScreen extends ConsumerWidget {
     final gameAsync = ref.watch(gameProvider(gameId));
     return Scaffold(
       appBar: AppBar(title: const Text('Detalhes do jogo')),
-      body: gameAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (_, _) =>
-            const Center(child: Text('Não foi possível carregar este jogo.')),
-        data: (game) => game == null
-            ? const Center(child: Text('Este jogo não está disponível.'))
-            : _content(context, ref, game),
+      body: SafeArea(
+        top: false,
+        child: gameAsync.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (_, _) =>
+              const Center(child: Text('Não foi possível carregar este jogo.')),
+          data: (game) => game == null
+              ? const Center(child: Text('Este jogo não está disponível.'))
+              : _content(context, ref, game),
+        ),
       ),
     );
   }
@@ -113,6 +117,7 @@ class GameDetailScreen extends ConsumerWidget {
         onPressed: () => context.push('/games/${game.id}/edit'),
         icon: const Icon(Icons.edit_outlined),
         label: const Text('Editar jogo'),
+        style: AppTheme.primaryActionButtonStyle(),
       ),
       if (game.listType == GameListType.wishlist) ...[
         const SizedBox(height: 10),

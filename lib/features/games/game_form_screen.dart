@@ -116,217 +116,229 @@ class _GameFormScreenState extends ConsumerState<GameFormScreen> {
     final editing = widget.gameId != null;
     return Scaffold(
       appBar: AppBar(title: Text(editing ? 'Editar jogo' : 'Adicionar jogo')),
-      body: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (!editing) ...[
-                  _catalogPanel(context),
-                  const SizedBox(height: 18),
-                ],
-                Text(
-                  'Dados do jogo',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 14),
-                TextFormField(
-                  controller: _nameController,
-                  textCapitalization: TextCapitalization.words,
-                  onChanged: (value) {
-                    if (widget.gameId == null &&
-                        _selectedCatalogGame != null &&
-                        value.trim() != _selectedCatalogGame!.name) {
-                      setState(() {
-                        _selectedCatalogGame = null;
-                        _externalGameId = null;
-                        _sourceGameId = null;
-                        _source = GameSource.manual;
-                      });
-                    }
-                  },
-                  decoration: const InputDecoration(
-                    labelText: 'Nome do jogo *',
-                    prefixIcon: Icon(Icons.sports_esports_rounded),
-                  ),
-                  validator: (value) => value == null || value.trim().isEmpty
-                      ? 'Informe o nome do jogo.'
-                      : null,
-                ),
-                const SizedBox(height: 16),
-                DropdownButtonFormField<String>(
-                  initialValue: platformFamilyId(_platformId),
-                  isExpanded: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Plataforma *',
-                    prefixIcon: Icon(Icons.devices_rounded),
-                  ),
-                  items: gamePlatforms
-                      .map(
-                        (platform) => DropdownMenuItem<String>(
-                          value: platform.$1,
-                          child: Text(platform.$2),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (value) {
-                    if (value != null) setState(() => _platformId = value);
-                  },
-                ),
-                if (editing && _source == GameSource.rawg)
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: RawgAttributionLink(gameSlug: _sourceGameId),
-                  ),
-                const SizedBox(height: 22),
-                Text(
-                  'Sua experiência',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 14),
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    final ratingField = _ratingField(context);
-                    final hoursField = TextFormField(
-                      controller: _hoursController,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      decoration: const InputDecoration(
-                        labelText: 'Horas jogadas',
-                        prefixIcon: Icon(Icons.schedule_rounded),
-                      ),
-                      validator: (value) {
-                        if (value == null || value.trim().isEmpty) {
-                          return null;
-                        }
-                        final hours = double.tryParse(
-                          value.replaceAll(',', '.'),
-                        );
-                        if (hours == null ||
-                            !hours.isFinite ||
-                            hours < 0 ||
-                            hours * 60 > 9007199254740991) {
-                          return 'Informe zero ou mais horas.';
-                        }
-                        return null;
-                      },
-                    );
-                    if (constraints.maxWidth < 540) {
-                      return Column(
-                        children: [
-                          ratingField,
-                          const SizedBox(height: 16),
-                          hoursField,
-                        ],
-                      );
-                    }
-                    return Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(child: ratingField),
-                        const SizedBox(width: 16),
-                        Expanded(child: hoursField),
-                      ],
-                    );
-                  },
-                ),
-                const SizedBox(height: 16),
-                OptionMenuField<GameListType>(
-                  label: 'Lista de destino',
-                  valueLabel: _listType.label,
-                  icon: Icons.folder_open_rounded,
-                  options: GameListType.values
-                      .map((type) => (type, type.label))
-                      .toList(),
-                  onSelected: (value) => setState(() {
-                    _listType = value;
-                    if (_listType == GameListType.wishlist) _status = null;
-                    if (_listType == GameListType.library && _status == null) {
-                      _status = GameStatus.completed;
-                    }
-                  }),
-                ),
-                if (_listType == GameListType.library) ...[
-                  const SizedBox(height: 16),
-                  OptionMenuField<GameStatus>(
-                    label: 'Status *',
-                    valueLabel: (_status ?? GameStatus.playing).label,
-                    icon: Icons.flag_outlined,
-                    options: GameStatus.values
-                        .map((status) => (status, status.label))
-                        .toList(),
-                    onSelected: (value) => setState(() => _status = value),
-                  ),
-                ],
-                const SizedBox(height: 22),
-                Text(
-                  'Datas (opcionais)',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                _dateTile(
-                  context,
-                  'Início',
-                  _startDate,
-                  (date) => setState(() => _startDate = date),
-                ),
-                _dateTile(
-                  context,
-                  'Conclusão',
-                  _completionDate,
-                  (date) => setState(() => _completionDate = date),
-                ),
-                if (_startDate != null &&
-                    _completionDate != null &&
-                    _completionDate!.isBefore(_startDate!))
-                  Padding(
-                    padding: const EdgeInsets.only(top: 5, left: 4),
-                    child: Text(
-                      'A conclusão não pode ser anterior ao início.',
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.error,
-                      ),
+      body: SafeArea(
+        top: false,
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (!editing) ...[
+                    _catalogPanel(context),
+                    const SizedBox(height: 18),
+                  ],
+                  Text(
+                    'Dados do jogo',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
-                const SizedBox(height: 24),
-                FilledButton.icon(
-                  onPressed: _saving ? null : _save,
-                  icon: _saving
-                      ? const SizedBox.square(
-                          dimension: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
+                  const SizedBox(height: 14),
+                  TextFormField(
+                    controller: _nameController,
+                    textCapitalization: TextCapitalization.words,
+                    onChanged: (value) {
+                      if (widget.gameId == null &&
+                          _selectedCatalogGame != null &&
+                          value.trim() != _selectedCatalogGame!.name) {
+                        setState(() {
+                          _selectedCatalogGame = null;
+                          _externalGameId = null;
+                          _sourceGameId = null;
+                          _source = GameSource.manual;
+                        });
+                      }
+                    },
+                    decoration: const InputDecoration(
+                      labelText: 'Nome do jogo *',
+                      prefixIcon: Icon(Icons.sports_esports_rounded),
+                    ),
+                    validator: (value) => value == null || value.trim().isEmpty
+                        ? 'Informe o nome do jogo.'
+                        : null,
+                  ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    initialValue: platformFamilyId(_platformId),
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Plataforma *',
+                      prefixIcon: Icon(Icons.devices_rounded),
+                    ),
+                    items: gamePlatforms
+                        .map(
+                          (platform) => DropdownMenuItem<String>(
+                            value: platform.$1,
+                            child: Text(platform.$2),
+                          ),
                         )
-                      : const Icon(Icons.check_rounded),
-                  label: Text(
-                    _saving
-                        ? 'Salvando no dispositivo…'
-                        : editing
-                        ? 'Salvar alterações'
-                        : 'Salvar jogo',
+                        .toList(),
+                    onChanged: (value) {
+                      if (value != null) setState(() => _platformId = value);
+                    },
                   ),
-                  style: FilledButton.styleFrom(
-                    minimumSize: const Size.fromHeight(52),
+                  if (editing && _source == GameSource.rawg)
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: RawgAttributionLink(gameSlug: _sourceGameId),
+                    ),
+                  const SizedBox(height: 22),
+                  Text(
+                    'Sua experiência',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 9),
-                Text(
-                  'O cadastro é local e funciona sem conexão.',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  const SizedBox(height: 14),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final ratingField = _ratingField(context);
+                      final hoursField = TextFormField(
+                        controller: _hoursController,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: 'Horas jogadas',
+                          prefixIcon: Icon(Icons.schedule_rounded),
+                        ),
+                        validator: (value) {
+                          if (value == null || value.trim().isEmpty) {
+                            return null;
+                          }
+                          final hours = double.tryParse(
+                            value.replaceAll(',', '.'),
+                          );
+                          if (hours == null ||
+                              !hours.isFinite ||
+                              hours < 0 ||
+                              hours * 60 > 9007199254740991) {
+                            return 'Informe zero ou mais horas.';
+                          }
+                          return null;
+                        },
+                      );
+                      if (constraints.maxWidth < 540) {
+                        return Column(
+                          children: [
+                            ratingField,
+                            const SizedBox(height: 16),
+                            hoursField,
+                          ],
+                        );
+                      }
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(child: ratingField),
+                          const SizedBox(width: 16),
+                          Expanded(child: hoursField),
+                        ],
+                      );
+                    },
                   ),
-                ),
-              ],
+                  const SizedBox(height: 16),
+                  OptionMenuField<GameListType>(
+                    label: 'Lista de destino',
+                    valueLabel: _listType.label,
+                    icon: Icons.folder_open_rounded,
+                    options: GameListType.values
+                        .map((type) => (type, type.label))
+                        .toList(),
+                    onSelected: (value) => setState(() {
+                      _listType = value;
+                      if (_listType == GameListType.wishlist) _status = null;
+                      if (_listType == GameListType.library &&
+                          _status == null) {
+                        _status = GameStatus.completed;
+                      }
+                    }),
+                  ),
+                  if (_listType == GameListType.library) ...[
+                    const SizedBox(height: 16),
+                    OptionMenuField<GameStatus>(
+                      label: 'Status *',
+                      valueLabel: (_status ?? GameStatus.playing).label,
+                      icon: Icons.flag_outlined,
+                      options: GameStatus.values
+                          .map((status) => (status, status.label))
+                          .toList(),
+                      onSelected: (value) => setState(() => _status = value),
+                    ),
+                  ],
+                  const SizedBox(height: 22),
+                  Text(
+                    'Datas (opcionais)',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: _dateTile(
+                          context,
+                          'Início',
+                          _startDate,
+                          (date) => setState(() => _startDate = date),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _dateTile(
+                          context,
+                          'Conclusão',
+                          _completionDate,
+                          (date) => setState(() => _completionDate = date),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (_startDate != null &&
+                      _completionDate != null &&
+                      _completionDate!.isBefore(_startDate!))
+                    Padding(
+                      padding: const EdgeInsets.only(top: 5, left: 4),
+                      child: Text(
+                        'A conclusão não pode ser anterior ao início.',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                      ),
+                    ),
+                  const SizedBox(height: 24),
+                  FilledButton.icon(
+                    onPressed: _saving ? null : _save,
+                    icon: _saving
+                        ? const SizedBox.square(
+                            dimension: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.check_rounded),
+                    label: Text(
+                      _saving
+                          ? 'Salvando no dispositivo…'
+                          : editing
+                          ? 'Salvar alterações'
+                          : 'Salvar jogo',
+                    ),
+                    style: AppTheme.primaryActionButtonStyle(),
+                  ),
+                  const SizedBox(height: 9),
+                  Text(
+                    'O cadastro é local e funciona sem conexão.',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -334,56 +346,99 @@ class _GameFormScreenState extends ConsumerState<GameFormScreen> {
     );
   }
 
-  Widget _ratingField(BuildContext context) => InputDecorator(
-    isEmpty: false,
-    decoration: const InputDecoration(
-      labelText: 'Nota de 0 a 10',
-      contentPadding: EdgeInsets.fromLTRB(12, 12, 12, 4),
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          '${_rating.toStringAsFixed(1)} / 10',
-          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-            fontWeight: FontWeight.w800,
-            color: Theme.of(context).colorScheme.primary,
-          ),
-        ),
-        Slider(
-          value: _rating,
-          min: 0,
-          max: 10,
-          divisions: 20,
-          label: _rating.toStringAsFixed(1),
-          semanticFormatterCallback: (value) =>
-              '${value.toStringAsFixed(1)} de 10',
-          onChanged: (value) => setState(() => _rating = value),
-        ),
-        const SizedBox(height: 4),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Row(
+  Widget _ratingField(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+
+    return InputDecorator(
+      isEmpty: false,
+      decoration: const InputDecoration(
+        contentPadding: EdgeInsets.fromLTRB(10, 6, 10, 4),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                '0',
-                style: Theme.of(
-                  context,
-                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                'Nota',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
               ),
-              Text(
-                '10',
-                style: Theme.of(
-                  context,
-                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 2),
+                decoration: BoxDecoration(
+                  color: colors.primary.withValues(alpha: .08),
+                  borderRadius: BorderRadius.circular(99),
+                  border: Border.all(
+                    color: colors.outlineVariant.withValues(alpha: .65),
+                  ),
+                ),
+                child: Text(
+                  '${_rating.toStringAsFixed(1)} / 10',
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: colors.primary,
+                  ),
+                ),
               ),
             ],
           ),
-        ),
-      ],
-    ),
-  );
+          SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              trackHeight: 3,
+              activeTrackColor: colors.primary,
+              inactiveTrackColor: colors.outlineVariant.withValues(alpha: .8),
+              thumbColor: colors.primary,
+              overlayColor: colors.primary.withValues(alpha: .14),
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 10),
+              overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+            ),
+            child: Slider(
+              value: _rating,
+              min: 0,
+              max: 10,
+              divisions: 20,
+              label: _rating.toStringAsFixed(1),
+              semanticFormatterCallback: (value) =>
+                  '${value.toStringAsFixed(1)} de 10',
+              onChanged: (value) => setState(() => _rating = value),
+            ),
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              SizedBox(
+                width: 20,
+                child: Text(
+                  '0',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: colors.onSurfaceVariant,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              SizedBox(
+                width: 20,
+                child: Text(
+                  '10',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: colors.onSurfaceVariant,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _catalogPanel(BuildContext context) => Container(
     padding: const EdgeInsets.all(16),
@@ -680,41 +735,74 @@ class _GameFormScreenState extends ConsumerState<GameFormScreen> {
     String label,
     DateTime? value,
     ValueChanged<DateTime?> onChanged,
-  ) => Padding(
-    padding: const EdgeInsets.only(top: 8),
-    child: Row(
+  ) {
+    final borderRadius = BorderRadius.circular(AppSpace.radius / 1.5);
+
+    return Stack(
       children: [
-        Expanded(
-          child: OutlinedButton.icon(
-            onPressed: () async {
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: borderRadius,
+            onTap: () async {
               final date = await showDatePicker(
                 context: context,
                 initialDate: value ?? DateTime.now(),
                 firstDate: DateTime(1970),
                 lastDate: DateTime.now().add(const Duration(days: 365 * 20)),
                 helpText: 'Selecionar data de $label'.toLowerCase(),
+                builder: (context, child) => Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(
+                      maxWidth: 344,
+                      maxHeight: 540,
+                    ),
+                    child: child!,
+                  ),
+                ),
               );
               if (date != null) onChanged(date);
             },
-            icon: const Icon(Icons.calendar_month_rounded),
-            label: Text(
-              '$label: ${value == null ? 'não informada' : DateFormat('dd/MM/yyyy').format(value)}',
-            ),
-            style: OutlinedButton.styleFrom(
-              alignment: Alignment.centerLeft,
-              minimumSize: const Size.fromHeight(48),
+            child: InputDecorator(
+              isEmpty: false,
+              decoration: InputDecoration(
+                labelText: label,
+                prefixIcon: const Icon(Icons.calendar_month_rounded),
+              ),
+              child: Text(
+                value == null
+                    ? 'Selecionar'
+                    : DateFormat('dd/MM/yyyy').format(value),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
           ),
         ),
         if (value != null)
-          IconButton(
-            tooltip: 'Limpar data de $label',
-            onPressed: () => onChanged(null),
-            icon: const Icon(Icons.close_rounded),
+          Positioned(
+            top: 0,
+            right: 3,
+            child: SizedBox(
+              width: 24,
+              height: 24,
+              child: IconButton(
+                tooltip: 'Limpar data de $label',
+                onPressed: () => onChanged(null),
+                padding: EdgeInsets.zero,
+                visualDensity: VisualDensity.compact,
+                constraints: const BoxConstraints.tightFor(
+                  width: 24,
+                  height: 24,
+                ),
+                icon: const Icon(Icons.close_rounded),
+                iconSize: 16,
+              ),
+            ),
           ),
       ],
-    ),
-  );
+    );
+  }
 
   void _onCatalogQueryChanged(String value) {
     _catalogDebounce?.cancel();
@@ -864,12 +952,12 @@ class _GameFormScreenState extends ConsumerState<GameFormScreen> {
   String? _platformFromRawg(List<String> names) {
     final normalized = names.map((name) => name.toLowerCase()).toList();
     const families = <(String, String)>[
+      ('pc', 'pc'),
+      ('windows', 'pc'),
       ('playstation', 'playstation'),
       ('xbox', 'xbox'),
       ('nintendo', 'nintendo'),
       ('switch', 'nintendo'),
-      ('pc', 'pc'),
-      ('windows', 'pc'),
     ];
     for (final family in families) {
       if (normalized.any((name) => name.contains(family.$1))) return family.$2;
