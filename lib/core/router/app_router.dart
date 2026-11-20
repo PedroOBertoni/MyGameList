@@ -4,15 +4,63 @@ import 'package:go_router/go_router.dart';
 
 import '../../features/games/game_detail_screen.dart';
 import '../../features/games/game_form_screen.dart';
+import '../../features/auth/auth_screen.dart';
+import '../../features/auth/legal_document_screen.dart';
 import '../../features/library/game_list_screen.dart';
 import '../../features/settings/settings_screen.dart';
 import '../models/game.dart';
+import '../providers/app_providers.dart';
 import '../widgets/app_bottom_navigation.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
-  final router = GoRouter(
-    initialLocation: '/library',
+  late final GoRouter router;
+  router = GoRouter(
+    initialLocation: '/auth/checking',
+    redirect: (context, state) {
+      const publicRoutes = {
+        '/auth/checking',
+        '/login',
+        '/register',
+        '/terms',
+        '/privacy',
+      };
+      const signedInLandingRoutes = {'/auth/checking', '/login', '/register'};
+      final location = state.uri.path;
+      final authStatus = ref.read(authStatusProvider);
+
+      if (authStatus.isLoading) {
+        return location == '/auth/checking' ? null : '/auth/checking';
+      }
+
+      final isSignedIn = authStatus.asData?.value ?? false;
+      if (!isSignedIn && location == '/auth/checking') return '/login';
+      if (!isSignedIn && !publicRoutes.contains(location)) return '/login';
+      if (isSignedIn && signedInLandingRoutes.contains(location)) {
+        return '/library';
+      }
+      return null;
+    },
     routes: [
+      GoRoute(path: '/', redirect: (context, state) => '/auth/checking'),
+      GoRoute(
+        path: '/auth/checking',
+        builder: (context, state) => const AuthLoadingScreen(),
+      ),
+      GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
+      GoRoute(
+        path: '/register',
+        builder: (context, state) => const RegisterScreen(),
+      ),
+      GoRoute(
+        path: '/terms',
+        builder: (context, state) =>
+            const LegalDocumentScreen(document: LegalDocument.terms),
+      ),
+      GoRoute(
+        path: '/privacy',
+        builder: (context, state) =>
+            const LegalDocumentScreen(document: LegalDocument.privacy),
+      ),
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) =>
             AppShell(navigationShell: navigationShell),
@@ -66,6 +114,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
     ],
   );
+  ref.listen(authStatusProvider, (previous, next) => router.refresh());
   ref.onDispose(router.dispose);
   return router;
 });

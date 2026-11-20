@@ -18,6 +18,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          authStatusProvider.overrideWithValue(const AsyncData(true)),
           gamesProvider.overrideWith(
             (ref, listType) async => [
               Game(
@@ -63,6 +64,36 @@ void main() {
     await tester.tap(find.text('Biblioteca'));
     await tester.pumpAndSettle();
     expect(find.text('Minha Biblioteca'), findsOneWidget);
+  });
+
+  testWidgets('unauthenticated sessions cannot open protected routes', (
+    tester,
+  ) async {
+    final container = ProviderContainer(
+      overrides: [authStatusProvider.overrideWithValue(const AsyncData(false))],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const _RouterApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Acesse sua conta para entrar na sua biblioteca'),
+      findsOneWidget,
+    );
+    expect(find.byType(AppBottomNavigation), findsNothing);
+
+    container.read(routerProvider).go('/settings');
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Acesse sua conta para entrar na sua biblioteca'),
+      findsOneWidget,
+    );
+    expect(find.text('Perfil e configurações'), findsNothing);
   });
 
   testWidgets('bottom navigation selects each of its three destinations', (

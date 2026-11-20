@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 import '../../core/database/app_database.dart';
 import 'integration_contracts.dart';
@@ -10,6 +12,7 @@ class FirebaseAuthGateway implements AuthGateway {
   const FirebaseAuthGateway(this._auth);
 
   final FirebaseAuth _auth;
+  static Future<void>? _googleSignInInitialization;
 
   @override
   Future<void> signInWithEmail(String email, String password) async {
@@ -28,11 +31,39 @@ class FirebaseAuthGateway implements AuthGateway {
   }
 
   @override
+  Future<void> sendPasswordResetEmail(String email) =>
+      _auth.sendPasswordResetEmail(email: email.trim());
+
+  @override
   Future<void> signOut({required bool preserveLocalData}) => _auth.signOut();
 
   @override
-  Future<void> signInWithGoogle() =>
-      Future.error(const IntegrationNotConfiguredException('Login Google'));
+  Future<void> signInWithGoogle() async {
+    if (kIsWeb) {
+      await _auth.signInWithPopup(GoogleAuthProvider());
+      return;
+    }
+
+    final googleSignIn = GoogleSignIn.instance;
+    _googleSignInInitialization ??= googleSignIn.initialize();
+    await _googleSignInInitialization;
+    try {
+      final account = await googleSignIn.authenticate();
+      final idToken = account.authentication.idToken;
+      if (idToken == null || idToken.isEmpty) {
+        throw FirebaseAuthException(
+          code: 'invalid-credential',
+          message: 'O Google não retornou um token de autenticação.',
+        );
+      }
+      await _auth.signInWithCredential(
+        GoogleAuthProvider.credential(idToken: idToken),
+      );
+    } on GoogleSignInException catch (error) {
+      if (error.code == GoogleSignInExceptionCode.canceled) return;
+      rethrow;
+    }
+  }
 
   @override
   Future<void> signInWithSteam() =>

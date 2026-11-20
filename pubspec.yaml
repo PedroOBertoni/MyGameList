@@ -21,6 +21,8 @@ dependencies:
   firebase_core: ^5.2.0
   firebase_auth: ^7.1.0
   cloud_firestore: ^7.2.0
+  google_sign_in: ^7.2.0
+  font_awesome_flutter: ^11.0.0
   http: ^1.3.0
   url_launcher: ^6.3.1
 
@@ -28,6 +30,21 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: assets/images/logo.webp
+  remove_alpha_ios: true
+  background_color_ios: '#081321'
+  adaptive_icon_background: '#081321'
+  adaptive_icon_foreground: assets/images/logo.webp
+  web:
+    generate: true
+    image_path: assets/images/logo.webp
+    background_color: '#081321'
+    theme_color: '#081321'
 
 flutter:
   uses-material-design: true

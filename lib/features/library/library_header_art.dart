@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/my_game_list_logo.dart';
 
 class LibraryHeaderArt extends StatelessWidget {
   const LibraryHeaderArt({
@@ -65,33 +66,8 @@ class LibraryHeaderArt extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  const Icon(
-                    Icons.sports_esports_rounded,
-                    size: 34,
-                    color: AppColors.gold,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: RichText(
-                      text: const TextSpan(
-                        style: TextStyle(
-                          fontSize: 22,
-                          letterSpacing: .1,
-                          fontWeight: FontWeight.w900,
-                        ),
-                        children: [
-                          TextSpan(
-                            text: 'MyGame',
-                            style: TextStyle(color: AppColors.white),
-                          ),
-                          TextSpan(
-                            text: 'List',
-                            style: TextStyle(color: AppColors.gold),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
+                  const MyGameListLogo(),
+                  const Expanded(child: SizedBox.shrink()),
                   Material(
                     color: AppColors.gold,
                     borderRadius: BorderRadius.circular(AppSpace.buttonRadius),

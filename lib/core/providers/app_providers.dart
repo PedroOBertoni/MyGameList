@@ -20,6 +20,10 @@ final authStateProvider = StreamProvider<User?>((ref) {
   return FirebaseAuth.instance.authStateChanges();
 });
 
+final authStatusProvider = Provider<AsyncValue<bool>>((ref) {
+  return ref.watch(authStateProvider).whenData((user) => user != null);
+});
+
 final guestDatabaseProvider = FutureProvider<AppDatabase>((ref) async {
   final database = AppDatabase();
   ref.onDispose(() => database.close());

@@ -51,6 +51,7 @@ abstract interface class GameCatalogGateway {
 abstract interface class AuthGateway {
   Future<void> signInWithEmail(String email, String password);
   Future<void> createAccountWithEmail(String email, String password);
+  Future<void> sendPasswordResetEmail(String email);
   Future<void> signInWithGoogle();
   Future<void> signInWithSteam();
   Future<void> signInWithEpic();
@@ -88,6 +89,10 @@ class UnconfiguredAuthGateway implements AuthGateway {
 
   @override
   Future<void> createAccountWithEmail(String email, String password) =>
+      Future.error(const IntegrationNotConfiguredException('Firebase Auth'));
+
+  @override
+  Future<void> sendPasswordResetEmail(String email) =>
       Future.error(const IntegrationNotConfiguredException('Firebase Auth'));
 
   @override

@@ -3,11 +3,11 @@ import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/models/game.dart';
 import '../../core/providers/app_providers.dart';
 import '../../core/theme/app_theme.dart';
-import '../integrations/rawg_attribution_link.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -20,28 +20,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   static const _steamProfilePreferenceKey = 'steam.profile';
 
   late final TextEditingController _steamProfileController;
-  late final TextEditingController _emailController;
-  late final TextEditingController _passwordController;
   String? _linkedSteamProfile;
   bool _steamProfileLoading = true;
   bool _steamSyncing = false;
-  bool _creatingAccount = false;
   bool _authBusy = false;
 
   @override
   void initState() {
     super.initState();
     _steamProfileController = TextEditingController();
-    _emailController = TextEditingController();
-    _passwordController = TextEditingController();
     unawaited(_loadSteamProfile());
   }
 
   @override
   void dispose() {
     _steamProfileController.dispose();
-    _emailController.dispose();
-    _passwordController.dispose();
     super.dispose();
   }
 
@@ -168,6 +161,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     onPressed: _steamSyncing || _steamProfileLoading
                         ? null
                         : _syncSteamLibrary,
+                    style: AppTheme.primaryActionButtonStyle(),
                     icon: _steamSyncing
                         ? const SizedBox.square(
                             dimension: 18,
@@ -273,10 +267,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ],
             ),
           ),
-          const Align(
-            alignment: Alignment.centerLeft,
-            child: RawgAttributionLink(compact: true),
-          ),
           const SizedBox(height: 20),
           Center(
             child: Text(
@@ -336,7 +326,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: user == null
-                  ? _accountForm(context)
+                  ? const ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(Icons.lock_outline_rounded),
+                      title: Text('Nenhuma sessão autenticada'),
+                    )
                   : Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
@@ -354,6 +348,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         const SizedBox(height: 8),
                         OutlinedButton.icon(
                           onPressed: _authBusy ? null : _signOut,
+                          style: AppTheme.outlinedActionButtonStyle(context),
                           icon: const Icon(Icons.logout_rounded),
                           label: const Text('Sair da conta'),
                         ),
@@ -364,108 +359,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         );
   }
 
-  Widget _accountForm(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      Text(
-        _creatingAccount
-            ? 'Crie sua conta para guardar seus dados na nuvem.'
-            : 'Entre para sincronizar seus jogos e acessar sua biblioteca em outros dispositivos.',
-        style: Theme.of(context).textTheme.bodyMedium,
-      ),
-      const SizedBox(height: 14),
-      TextField(
-        controller: _emailController,
-        enabled: !_authBusy,
-        keyboardType: TextInputType.emailAddress,
-        textInputAction: TextInputAction.next,
-        autofillHints: const [AutofillHints.email],
-        decoration: const InputDecoration(
-          labelText: 'E-mail',
-          prefixIcon: Icon(Icons.email_outlined),
-        ),
-      ),
-      const SizedBox(height: 12),
-      TextField(
-        controller: _passwordController,
-        enabled: !_authBusy,
-        obscureText: true,
-        textInputAction: TextInputAction.done,
-        autofillHints: _creatingAccount
-            ? const [AutofillHints.newPassword]
-            : const [AutofillHints.password],
-        onSubmitted: (_) => _submitAccount(),
-        decoration: const InputDecoration(
-          labelText: 'Senha',
-          prefixIcon: Icon(Icons.lock_outline_rounded),
-        ),
-      ),
-      const SizedBox(height: 14),
-      FilledButton.icon(
-        onPressed: _authBusy ? null : _submitAccount,
-        icon: _authBusy
-            ? const SizedBox.square(
-                dimension: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : Icon(_creatingAccount ? Icons.person_add_alt_1 : Icons.login),
-        label: Text(
-          _authBusy
-              ? 'Aguarde…'
-              : _creatingAccount
-              ? 'Criar conta'
-              : 'Entrar',
-        ),
-      ),
-      Align(
-        alignment: Alignment.center,
-        child: TextButton(
-          onPressed: _authBusy
-              ? null
-              : () => setState(() => _creatingAccount = !_creatingAccount),
-          child: Text(
-            _creatingAccount ? 'Já tenho uma conta' : 'Ainda não tenho conta',
-          ),
-        ),
-      ),
-    ],
-  );
-
-  Future<void> _submitAccount() async {
-    final email = _emailController.text.trim();
-    final password = _passwordController.text;
-    if (!email.contains('@')) {
-      _showMessage('Informe um e-mail válido.');
-      return;
-    }
-    if (password.length < 6) {
-      _showMessage('A senha precisa ter pelo menos 6 caracteres.');
-      return;
-    }
-
-    setState(() => _authBusy = true);
-    try {
-      final gateway = ref.read(authGatewayProvider);
-      if (_creatingAccount) {
-        await gateway.createAccountWithEmail(email, password);
-        _showMessage('Conta criada. Iniciando sincronização da biblioteca.');
-      } else {
-        await gateway.signInWithEmail(email, password);
-        _showMessage('Login realizado. Sincronizando sua biblioteca.');
-      }
-    } catch (error) {
-      if (mounted) _showMessage(_authErrorMessage(error));
-    } finally {
-      if (mounted) setState(() => _authBusy = false);
-    }
-  }
-
   Future<void> _signOut() async {
     setState(() => _authBusy = true);
     try {
       await ref.read(authGatewayProvider).signOut(preserveLocalData: true);
       if (mounted) {
-        _showMessage('Sessão encerrada. Os dados locais foram mantidos.');
+        ref.invalidate(authStateProvider);
+        context.go('/login');
       }
     } catch (error) {
       if (mounted) _showMessage(_authErrorMessage(error));
