@@ -9,7 +9,8 @@ abstract interface class GameRepository {
   Future<Game> saveGame(GameDraft draft, {String? id});
   Future<void> deleteGame(String id);
   Future<void> deleteGames(List<String> ids);
-  Future<void> moveToLibrary(String id, GameStatus status);
+  Future<void> moveToLibrary(String id);
+  Future<void> moveToWishlist(String id);
   Future<void> persistPositions(GameListType listType, List<Game> games);
   Future<int> get pendingOperationCount;
   Future<String?> readPreference(String key);
@@ -54,8 +55,14 @@ class DriftGameRepository implements GameRepository {
   }
 
   @override
-  Future<void> moveToLibrary(String id, GameStatus status) async {
-    await _database.moveToLibrary(id, status);
+  Future<void> moveToLibrary(String id) async {
+    await _database.moveToLibrary(id);
+    _notifyMutation();
+  }
+
+  @override
+  Future<void> moveToWishlist(String id) async {
+    await _database.moveToWishlist(id);
     _notifyMutation();
   }
 

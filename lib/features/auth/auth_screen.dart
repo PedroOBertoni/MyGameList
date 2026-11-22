@@ -172,7 +172,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       color: Theme.of(context).colorScheme.onSurfaceVariant,
       height: 1.5,
     );
-    final linkStyle = style?.copyWith(decoration: TextDecoration.underline);
+    final linkStyle = style?.copyWith(
+      fontWeight: FontWeight.w700,
+      decoration: TextDecoration.underline,
+      decorationColor: Theme.of(context).colorScheme.onSurfaceVariant,
+    );
     return Text.rich(
       TextSpan(
         style: style,
@@ -225,9 +229,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     try {
       await ref.read(authGatewayProvider).signInWithGoogle();
     } catch (error) {
-      if (mounted && !_isGoogleSignInCancellation(error)) {
-        _showMessage(_authErrorMessage(error));
-      }
+      if (mounted) _showMessage(_authErrorMessage(error));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -525,9 +527,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     try {
       await ref.read(authGatewayProvider).signInWithGoogle();
     } catch (error) {
-      if (mounted && !_isGoogleSignInCancellation(error)) {
-        _showMessage(_authErrorMessage(error));
-      }
+      if (mounted) _showMessage(_authErrorMessage(error));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -904,13 +904,6 @@ bool _isValidPassword(String password) =>
     RegExp(r'\d').hasMatch(password) &&
     RegExp(r'[^A-Za-z0-9]').hasMatch(password);
 
-bool _isGoogleSignInCancellation(Object error) =>
-    (error is GoogleSignInException &&
-        error.code == GoogleSignInExceptionCode.canceled) ||
-    (error is FirebaseAuthException &&
-        (error.code == 'popup-closed-by-user' ||
-            error.code == 'cancelled-popup-request'));
-
 String? _emailValidator(String? value) {
   final email = value?.trim() ?? '';
   if (email.isEmpty) return 'Informe seu e-mail.';
@@ -926,6 +919,8 @@ String _authErrorMessage(Object error) {
       GoogleSignInExceptionCode.clientConfigurationError ||
       GoogleSignInExceptionCode.providerConfigurationError =>
         'O acesso com Google precisa ser configurado para este aplicativo.',
+      GoogleSignInExceptionCode.canceled =>
+        'O login com Google foi interrompido. Se você escolheu uma conta, confira as assinaturas SHA-1/SHA-256 e o pacote Android cadastrados no Firebase.',
       _ => 'Não foi possível entrar com Google. Tente novamente.',
     };
   }
@@ -937,6 +932,10 @@ String _authErrorMessage(Object error) {
       'weak-password' => 'Escolha uma senha que atenda aos requisitos.',
       'operation-not-allowed' =>
         'O provedor de autenticação ainda não está habilitado no Firebase.',
+      'google-id-token-missing' =>
+        'O Google não retornou uma credencial. Confira o cliente OAuth web e as assinaturas SHA do app Android no Firebase.',
+      'popup-closed-by-user' ||
+      'cancelled-popup-request' => 'O login com Google foi cancelado.',
       'user-not-found' ||
       'wrong-password' ||
       'invalid-credential' => 'E-mail ou senha incorretos.',

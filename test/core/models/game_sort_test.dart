@@ -24,6 +24,27 @@ Game _game(
 }
 
 void main() {
+  test('wishlist sort options omit personal rating modes', () {
+    expect(sortModesForList(GameListType.wishlist), [
+      GameSortMode.manual,
+      GameSortMode.nameAscending,
+      GameSortMode.nameDescending,
+    ]);
+    expect(sortModesForList(GameListType.library), GameSortMode.values);
+    expect(
+      sortModeForList(GameListType.wishlist, GameSortMode.ratingDescending),
+      GameSortMode.manual,
+    );
+    expect(
+      sortModeForList(GameListType.wishlist, GameSortMode.playtimeDescending),
+      GameSortMode.manual,
+    );
+    expect(
+      sortModeForList(GameListType.library, GameSortMode.ratingDescending),
+      GameSortMode.ratingDescending,
+    );
+  });
+
   group('sortGames', () {
     test('sorts notes ascending, alphabetizes ties and keeps nulls last', () {
       final result = sortGames([

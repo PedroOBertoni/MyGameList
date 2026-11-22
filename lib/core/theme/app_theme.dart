@@ -41,8 +41,11 @@ abstract final class AppTheme {
     shape: AppSpace.buttonShape,
   );
 
-  static ButtonStyle outlinedActionButtonStyle(BuildContext context) {
-    final accent = Theme.of(context).colorScheme.primary;
+  static ButtonStyle outlinedActionButtonStyle(
+    BuildContext context, {
+    Color? color,
+  }) {
+    final accent = color ?? Theme.of(context).colorScheme.primary;
     return OutlinedButton.styleFrom(
       minimumSize: const Size.fromHeight(AppSpace.primaryButtonHeight),
       padding: AppSpace.primaryButtonPadding,

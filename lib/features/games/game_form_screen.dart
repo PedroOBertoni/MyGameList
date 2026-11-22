@@ -36,11 +36,14 @@ class _GameFormScreenState extends ConsumerState<GameFormScreen> {
   final _hoursController = TextEditingController();
   final _catalogSearchController = TextEditingController();
   String _platformId = 'pc';
-  double _rating = 0;
+  double? _rating;
   late GameListType _listType;
-  GameStatus? _status = GameStatus.completed;
+  GameStatus? _libraryStatus = GameStatus.notStarted;
+  WishlistStatus? _wishlistStatus;
   DateTime? _startDate;
   DateTime? _completionDate;
+  int? _originalPlaytimeMinutes;
+  bool _attemptedSave = false;
   bool _initialized = false;
   bool _saving = false;
   bool _searchingCatalog = false;
@@ -60,7 +63,6 @@ class _GameFormScreenState extends ConsumerState<GameFormScreen> {
   void initState() {
     super.initState();
     _listType = widget.initialListType;
-    if (_listType == GameListType.wishlist) _status = null;
   }
 
   @override
@@ -82,11 +84,13 @@ class _GameFormScreenState extends ConsumerState<GameFormScreen> {
     _coverController.text = steamAppId == null
         ? game.coverUrl ?? ''
         : steamLibraryCoverUrl(steamAppId);
-    _rating = game.rating ?? 0;
+    _rating = game.rating;
     _hoursController.text = game.playtimeHours?.toString() ?? '';
+    _originalPlaytimeMinutes = game.playtimeMinutes;
     _platformId = platformFamilyId(game.platformId);
     _listType = game.listType;
-    _status = game.status;
+    _libraryStatus = game.status ?? GameStatus.notStarted;
+    _wishlistStatus = game.wishlistStatus;
     _startDate = game.startDate;
     _completionDate = game.completionDate;
     _source = game.source;
@@ -161,156 +165,130 @@ class _GameFormScreenState extends ConsumerState<GameFormScreen> {
                         : null,
                   ),
                   const SizedBox(height: 16),
-                  DropdownButtonFormField<String>(
-                    initialValue: platformFamilyId(_platformId),
-                    isExpanded: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Plataforma *',
-                      prefixIcon: Icon(Icons.devices_rounded),
-                    ),
-                    items: gamePlatforms
-                        .map(
-                          (platform) => DropdownMenuItem<String>(
-                            value: platform.$1,
-                            child: Text(platform.$2),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (value) {
-                      if (value != null) setState(() => _platformId = value);
+                  OptionMenuField<String>(
+                    label: 'Plataforma *',
+                    value: platformFamilyId(_platformId),
+                    hint: 'Selecione uma plataforma',
+                    icon: Icons.devices_rounded,
+                    options: gamePlatforms,
+                    onSelected: (value) {
+                      setState(() => _platformId = value);
                     },
                   ),
-                  if (editing && _source == GameSource.rawg)
+                  if (editing && _source == GameSource.rawg) ...[
+                    const SizedBox(height: 8),
                     Align(
                       alignment: Alignment.centerLeft,
                       child: RawgAttributionLink(gameSlug: _sourceGameId),
                     ),
-                  const SizedBox(height: 22),
-                  Text(
-                    'Sua experiência',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      final ratingField = _ratingField(context);
-                      final hoursField = TextFormField(
-                        controller: _hoursController,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        decoration: const InputDecoration(
-                          labelText: 'Horas jogadas',
-                          prefixIcon: Icon(Icons.schedule_rounded),
-                        ),
-                        validator: (value) {
-                          if (value == null || value.trim().isEmpty) {
-                            return null;
-                          }
-                          final hours = double.tryParse(
-                            value.replaceAll(',', '.'),
-                          );
-                          if (hours == null ||
-                              !hours.isFinite ||
-                              hours < 0 ||
-                              hours * 60 > 9007199254740991) {
-                            return 'Informe zero ou mais horas.';
-                          }
-                          return null;
-                        },
-                      );
-                      if (constraints.maxWidth < 540) {
-                        return Column(
-                          children: [
-                            ratingField,
-                            const SizedBox(height: 16),
-                            hoursField,
-                          ],
-                        );
-                      }
-                      return Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(child: ratingField),
-                          const SizedBox(width: 16),
-                          Expanded(child: hoursField),
-                        ],
-                      );
-                    },
-                  ),
+                  ],
                   const SizedBox(height: 16),
                   OptionMenuField<GameListType>(
                     label: 'Lista de destino',
-                    valueLabel: _listType.label,
+                    value: _listType,
                     icon: Icons.folder_open_rounded,
                     options: GameListType.values
                         .map((type) => (type, type.label))
                         .toList(),
                     onSelected: (value) => setState(() {
                       _listType = value;
-                      if (_listType == GameListType.wishlist) _status = null;
-                      if (_listType == GameListType.library &&
-                          _status == null) {
-                        _status = GameStatus.completed;
+                      if (value == GameListType.library) {
+                        _libraryStatus ??= GameStatus.notStarted;
                       }
+                      _attemptedSave = false;
                     }),
                   ),
                   if (_listType == GameListType.library) ...[
+                    const SizedBox(height: 22),
+                    Text(
+                      'Sua experiência',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        final ratingField = _ratingField(context);
+                        final hoursField = _hoursField();
+                        if (constraints.maxWidth < 540) {
+                          return Column(
+                            children: [
+                              ratingField,
+                              const SizedBox(height: 16),
+                              hoursField,
+                            ],
+                          );
+                        }
+                        return Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(child: ratingField),
+                            const SizedBox(width: 16),
+                            Expanded(child: hoursField),
+                          ],
+                        );
+                      },
+                    ),
                     const SizedBox(height: 16),
                     OptionMenuField<GameStatus>(
-                      label: 'Status *',
-                      valueLabel: (_status ?? GameStatus.playing).label,
+                      label: 'Status da biblioteca *',
+                      value: _libraryStatus,
+                      hint: 'Selecione um status',
                       icon: Icons.flag_outlined,
                       options: GameStatus.values
                           .map((status) => (status, status.label))
                           .toList(),
-                      onSelected: (value) => setState(() => _status = value),
+                      onSelected: (value) => setState(() {
+                        _libraryStatus = value;
+                        _attemptedSave = false;
+                      }),
                     ),
+                    if (_attemptedSave && _libraryStatus == null)
+                      _statusError('Selecione um status da biblioteca.'),
+                    const SizedBox(height: 22),
+                    Text(
+                      'Datas (opcionais)',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: _dateTile(
+                            context,
+                            'Início',
+                            _startDate,
+                            (date) => setState(() => _startDate = date),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _dateTile(
+                            context,
+                            'Conclusão',
+                            _completionDate,
+                            (date) => setState(() => _completionDate = date),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (_startDate != null &&
+                        _completionDate != null &&
+                        _completionDate!.isBefore(_startDate!))
+                      Padding(
+                        padding: const EdgeInsets.only(top: 5, left: 4),
+                        child: Text(
+                          'A conclusão não pode ser anterior ao início.',
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                          ),
+                        ),
+                      ),
                   ],
-                  const SizedBox(height: 22),
-                  Text(
-                    'Datas (opcionais)',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: _dateTile(
-                          context,
-                          'Início',
-                          _startDate,
-                          (date) => setState(() => _startDate = date),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _dateTile(
-                          context,
-                          'Conclusão',
-                          _completionDate,
-                          (date) => setState(() => _completionDate = date),
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (_startDate != null &&
-                      _completionDate != null &&
-                      _completionDate!.isBefore(_startDate!))
-                    Padding(
-                      padding: const EdgeInsets.only(top: 5, left: 4),
-                      child: Text(
-                        'A conclusão não pode ser anterior ao início.',
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.error,
-                        ),
-                      ),
-                    ),
                   const SizedBox(height: 24),
                   FilledButton.icon(
                     onPressed: _saving ? null : _save,
@@ -346,6 +324,34 @@ class _GameFormScreenState extends ConsumerState<GameFormScreen> {
     );
   }
 
+  Widget _hoursField() => TextFormField(
+    controller: _hoursController,
+    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+    decoration: const InputDecoration(
+      labelText: 'Horas jogadas',
+      prefixIcon: Icon(Icons.schedule_rounded),
+    ),
+    validator: (value) {
+      if (value == null || value.trim().isEmpty) return null;
+      final hours = double.tryParse(value.replaceAll(',', '.'));
+      if (hours == null ||
+          !hours.isFinite ||
+          hours < 0 ||
+          hours * 60 > 9007199254740991) {
+        return 'Informe zero ou mais horas.';
+      }
+      return null;
+    },
+  );
+
+  Widget _statusError(String message) => Padding(
+    padding: const EdgeInsets.only(left: 16, top: 6),
+    child: Text(
+      message,
+      style: TextStyle(color: Theme.of(context).colorScheme.error),
+    ),
+  );
+
   Widget _ratingField(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
@@ -368,22 +374,37 @@ class _GameFormScreenState extends ConsumerState<GameFormScreen> {
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 2),
-                decoration: BoxDecoration(
-                  color: colors.primary.withValues(alpha: .08),
-                  borderRadius: BorderRadius.circular(99),
-                  border: Border.all(
-                    color: colors.outlineVariant.withValues(alpha: .65),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 9,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: colors.primary.withValues(alpha: .08),
+                      borderRadius: BorderRadius.circular(99),
+                      border: Border.all(
+                        color: colors.outlineVariant.withValues(alpha: .65),
+                      ),
+                    ),
+                    child: Text(
+                      '${_rating?.toStringAsFixed(1) ?? '—'} / 10',
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: colors.primary,
+                      ),
+                    ),
                   ),
-                ),
-                child: Text(
-                  '${_rating.toStringAsFixed(1)} / 10',
-                  style: theme.textTheme.labelLarge?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    color: colors.primary,
-                  ),
-                ),
+                  if (_rating != null)
+                    IconButton(
+                      tooltip: 'Limpar nota',
+                      onPressed: () => setState(() => _rating = null),
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(Icons.close_rounded, size: 18),
+                    ),
+                ],
               ),
             ],
           ),
@@ -398,11 +419,11 @@ class _GameFormScreenState extends ConsumerState<GameFormScreen> {
               overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
             ),
             child: Slider(
-              value: _rating,
+              value: _rating ?? 0,
               min: 0,
               max: 10,
               divisions: 20,
-              label: _rating.toStringAsFixed(1),
+              label: (_rating ?? 0).toStringAsFixed(1),
               semanticFormatterCallback: (value) =>
                   '${value.toStringAsFixed(1)} de 10',
               onChanged: (value) => setState(() => _rating = value),
@@ -477,7 +498,9 @@ class _GameFormScreenState extends ConsumerState<GameFormScreen> {
         ),
         const SizedBox(height: 4),
         Text(
-          'Pesquise o catálogo para preencher nome e imagem. Nota, horas e status continuam sendo seus.',
+          _listType == GameListType.library
+              ? 'Pesquise o catálogo para preencher nome e imagem. Nota, horas e status continuam sendo seus.'
+              : 'Pesquise o catálogo para preencher nome e imagem. Escolha a plataforma e a lista de destino abaixo.',
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
             color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
@@ -967,7 +990,12 @@ class _GameFormScreenState extends ConsumerState<GameFormScreen> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-    if (_startDate != null &&
+    if (_listType == GameListType.library && _libraryStatus == null) {
+      setState(() => _attemptedSave = true);
+      return;
+    }
+    if (_listType == GameListType.library &&
+        _startDate != null &&
         _completionDate != null &&
         _completionDate!.isBefore(_startDate!)) {
       setState(() {});
@@ -976,9 +1004,20 @@ class _GameFormScreenState extends ConsumerState<GameFormScreen> {
     setState(() => _saving = true);
     try {
       final hoursText = _hoursController.text.trim();
-      final hours = hoursText.isEmpty
+      final parsedHours = hoursText.isEmpty
           ? null
-          : double.parse(hoursText.replaceAll(',', '.'));
+          : double.tryParse(hoursText.replaceAll(',', '.'));
+      final validHours =
+          parsedHours != null &&
+          parsedHours.isFinite &&
+          parsedHours >= 0 &&
+          parsedHours * 60 <= 9007199254740991;
+      final hoursVisible = _listType == GameListType.library;
+      final playtimeMinutes = hoursVisible
+          ? validHours
+                ? (parsedHours * 60).round()
+                : null
+          : _originalPlaytimeMinutes;
       final draft = GameDraft(
         name: _nameController.text.trim(),
         platformId: _platformId,
@@ -989,11 +1028,14 @@ class _GameFormScreenState extends ConsumerState<GameFormScreen> {
         coverUrl: _coverController.text.trim().isEmpty
             ? null
             : _coverController.text.trim(),
-        rating: _rating,
-        playtimeMinutes: hours == null ? null : (hours * 60).round(),
-        startDate: _startDate,
-        completionDate: _completionDate,
-        status: _listType == GameListType.wishlist ? null : _status,
+        rating: hoursVisible ? _rating : null,
+        playtimeMinutes: playtimeMinutes,
+        startDate: hoursVisible || widget.gameId != null ? _startDate : null,
+        completionDate: hoursVisible || widget.gameId != null
+            ? _completionDate
+            : null,
+        status: _listType == GameListType.library ? _libraryStatus : null,
+        wishlistStatus: _wishlistStatus,
       );
       final repository = await ref.read(gameRepositoryProvider.future);
       await repository.saveGame(draft, id: widget.gameId);

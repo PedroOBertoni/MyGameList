@@ -3,26 +3,34 @@ import 'package:material_ui/material_ui.dart';
 class OptionMenuField<T> extends StatelessWidget {
   const OptionMenuField({
     required this.label,
-    required this.valueLabel,
+    required this.value,
     required this.icon,
     required this.options,
     required this.onSelected,
+    this.hint,
     super.key,
   });
 
   final String label;
-  final String valueLabel;
+  final T? value;
   final IconData icon;
   final List<(T, String)> options;
   final ValueChanged<T> onSelected;
+  final String? hint;
 
   @override
-  Widget build(BuildContext context) => PopupMenuButton<T>(
-    tooltip: label,
-    onSelected: onSelected,
-    itemBuilder: (context) => options
+  Widget build(BuildContext context) => DropdownButtonFormField<T>(
+    key: ValueKey(value),
+    initialValue: value,
+    isExpanded: true,
+    menuMaxHeight: 320,
+    borderRadius: BorderRadius.circular(16),
+    dropdownColor: Theme.of(context).colorScheme.surface,
+    hint: Text(hint ?? 'Selecione uma opção'),
+    decoration: InputDecoration(labelText: label, prefixIcon: Icon(icon)),
+    items: options
         .map(
-          (option) => PopupMenuItem<T>(
+          (option) => DropdownMenuItem<T>(
             value: option.$1,
             child: Text(
               option.$2,
@@ -31,15 +39,9 @@ class OptionMenuField<T> extends StatelessWidget {
             ),
           ),
         )
-        .toList(),
-    child: InputDecorator(
-      isEmpty: false,
-      decoration: InputDecoration(
-        labelText: label,
-        prefixIcon: Icon(icon),
-        suffixIcon: const Icon(Icons.arrow_drop_down_rounded),
-      ),
-      child: Text(valueLabel, maxLines: 1, overflow: TextOverflow.ellipsis),
-    ),
+        .toList(growable: false),
+    onChanged: (selected) {
+      if (selected != null) onSelected(selected);
+    },
   );
 }

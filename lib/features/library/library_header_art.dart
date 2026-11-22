@@ -8,6 +8,7 @@ class LibraryHeaderArt extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.onAdd,
+    this.onAddLongPress,
     this.useImageBackground = true,
     super.key,
   });
@@ -15,6 +16,7 @@ class LibraryHeaderArt extends StatelessWidget {
   final String title;
   final String subtitle;
   final VoidCallback onAdd;
+  final VoidCallback? onAddLongPress;
   final bool useImageBackground;
 
   @override
@@ -64,30 +66,46 @@ class LibraryHeaderArt extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  const MyGameListLogo(),
-                  const Expanded(child: SizedBox.shrink()),
-                  Material(
-                    color: AppColors.gold,
-                    borderRadius: BorderRadius.circular(AppSpace.buttonRadius),
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(
-                        AppSpace.buttonRadius,
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final compact = constraints.maxWidth < 320;
+                  return Row(
+                    children: [
+                      MyGameListLogo(
+                        iconSize: compact ? 28 : 34,
+                        fontSize: compact ? 18 : 22,
                       ),
-                      onTap: onAdd,
-                      child: const SizedBox(
-                        width: 42,
-                        height: 42,
-                        child: Icon(
-                          Icons.add_rounded,
-                          size: 28,
-                          color: AppColors.ink,
+                      const Expanded(child: SizedBox.shrink()),
+                      Tooltip(
+                        message: onAddLongPress == null
+                            ? 'Adicionar jogo'
+                            : 'Toque para adicionar; segure para ordenar desejos',
+                        child: Material(
+                          color: AppColors.gold,
+                          borderRadius: BorderRadius.circular(
+                            AppSpace.buttonRadius,
+                          ),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(
+                              AppSpace.buttonRadius,
+                            ),
+                            onTap: onAdd,
+                            onLongPress: onAddLongPress,
+                            child: const SizedBox(
+                              width: 42,
+                              height: 42,
+                              child: Icon(
+                                Icons.add_rounded,
+                                size: 28,
+                                color: AppColors.ink,
+                              ),
+                            ),
+                          ),
                         ),
                       ),
-                    ),
-                  ),
-                ],
+                    ],
+                  );
+                },
               ),
               const Spacer(),
               Row(

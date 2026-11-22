@@ -94,8 +94,9 @@ final listPreferencesProvider =
           // A malformed preference should fall back to deterministic sorting.
         }
       }
+      final savedMode = mode.isEmpty ? GameSortMode.manual : mode.first;
       return ListPreferences(
-        sortMode: mode.isEmpty ? GameSortMode.manual : mode.first,
+        sortMode: sortModeForList(listType, savedMode),
         tieOrders: ties,
       );
     });

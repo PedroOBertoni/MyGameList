@@ -7,7 +7,6 @@ import '../../core/models/game.dart';
 import '../../core/providers/app_providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/game_cover_image.dart';
-import '../integrations/rawg_attribution_link.dart';
 
 class GameDetailScreen extends ConsumerWidget {
   const GameDetailScreen({required this.gameId, super.key});
@@ -62,7 +61,7 @@ class GameDetailScreen extends ConsumerWidget {
             avatar: const Icon(Icons.devices_rounded, size: 16),
             label: Text(platformLabel(game.platformId)),
           ),
-          if (game.status != null)
+          if (game.listType == GameListType.library && game.status != null)
             Chip(
               avatar: const Icon(Icons.flag_outlined, size: 16),
               label: Text(game.status!.label),
@@ -74,38 +73,35 @@ class GameDetailScreen extends ConsumerWidget {
         ],
       ),
       const SizedBox(height: 18),
-      _detail(
-        context,
-        'Nota',
-        game.rating?.toStringAsFixed(1) ?? 'Não informada',
-        Icons.star_outline_rounded,
-      ),
-      _detail(
-        context,
-        'Horas jogadas',
-        game.playtimeMinutes == null
-            ? 'Não informadas'
-            : '${(game.playtimeMinutes! / 60).toStringAsFixed(1)} h',
-        Icons.schedule_rounded,
-      ),
-      _detail(
-        context,
-        'Data de início',
-        _date(game.startDate),
-        Icons.play_arrow_rounded,
-      ),
-      _detail(
-        context,
-        'Data de conclusão',
-        _date(game.completionDate),
-        Icons.check_circle_outline_rounded,
-      ),
-      _detail(context, 'Origem', game.source.label, Icons.source_outlined),
-      if (game.source == GameSource.rawg)
-        Align(
-          alignment: Alignment.centerLeft,
-          child: RawgAttributionLink(gameSlug: game.sourceGameId),
+      if (game.listType == GameListType.library) ...[
+        _detail(
+          context,
+          'Nota',
+          game.rating?.toStringAsFixed(1) ?? 'Não informada',
+          Icons.star_outline_rounded,
         ),
+        _detail(
+          context,
+          'Horas jogadas',
+          game.playtimeMinutes == null
+              ? 'Não informadas'
+              : '${(game.playtimeMinutes! / 60).toStringAsFixed(1)} h',
+          Icons.schedule_rounded,
+        ),
+        _detail(
+          context,
+          'Data de início',
+          _date(game.startDate),
+          Icons.play_arrow_rounded,
+        ),
+        _detail(
+          context,
+          'Data de conclusão',
+          _date(game.completionDate),
+          Icons.check_circle_outline_rounded,
+        ),
+      ],
+      _detail(context, 'Origem', game.source.label, Icons.source_outlined),
       _detail(
         context,
         'Criado',
@@ -125,6 +121,21 @@ class GameDetailScreen extends ConsumerWidget {
           onPressed: () => _moveToLibrary(context, ref, game),
           icon: const Icon(Icons.library_add_outlined),
           label: const Text('Mover para biblioteca'),
+          style: AppTheme.outlinedActionButtonStyle(
+            context,
+            color: AppColors.gold,
+          ),
+        ),
+      ] else ...[
+        const SizedBox(height: 10),
+        OutlinedButton.icon(
+          onPressed: () => _moveToWishlist(context, ref, game),
+          icon: const Icon(Icons.bookmark_add_outlined),
+          label: const Text('Mover para lista de desejos'),
+          style: AppTheme.outlinedActionButtonStyle(
+            context,
+            color: AppColors.gold,
+          ),
         ),
       ],
       const SizedBox(height: 10),
@@ -177,52 +188,25 @@ class GameDetailScreen extends ConsumerWidget {
     WidgetRef ref,
     Game game,
   ) async {
-    GameStatus? selected;
-    final result = await showDialog<GameStatus>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Adicionar à biblioteca'),
-          content: RadioGroup<GameStatus>(
-            groupValue: selected,
-            onChanged: (value) => setDialogState(() => selected = value),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text('Escolha o status atual deste jogo.'),
-                const SizedBox(height: 8),
-                ...GameStatus.values.map(
-                  (status) => RadioListTile<GameStatus>(
-                    value: status,
-                    title: Text(status.label),
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancelar'),
-            ),
-            FilledButton(
-              onPressed: selected == null
-                  ? null
-                  : () => Navigator.pop(context, selected),
-              child: const Text('Mover'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (result == null) return;
     final repository = await ref.read(gameRepositoryProvider.future);
-    await repository.moveToLibrary(game.id, result);
+    await repository.moveToLibrary(game.id);
     ref.invalidate(gamesProvider);
     ref.invalidate(gameProvider(game.id));
     ref.invalidate(pendingOperationCountProvider);
     if (context.mounted) context.go('/library');
+  }
+
+  Future<void> _moveToWishlist(
+    BuildContext context,
+    WidgetRef ref,
+    Game game,
+  ) async {
+    final repository = await ref.read(gameRepositoryProvider.future);
+    await repository.moveToWishlist(game.id);
+    ref.invalidate(gamesProvider);
+    ref.invalidate(gameProvider(game.id));
+    ref.invalidate(pendingOperationCountProvider);
+    if (context.mounted) context.go('/wishlist');
   }
 
   Future<void> _delete(BuildContext context, WidgetRef ref, Game game) async {

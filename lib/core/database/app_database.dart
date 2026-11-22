@@ -16,9 +16,33 @@ class AppDatabase extends GeneratedDatabase {
     : super(executor ?? driftDatabase(name: name));
 
   static const _uuid = Uuid();
+  static const _createGamesTable = '''
+    CREATE TABLE games (
+      id TEXT PRIMARY KEY NOT NULL,
+      external_game_id TEXT,
+      source TEXT NOT NULL DEFAULT 'manual',
+      source_game_id TEXT,
+      name TEXT NOT NULL,
+      cover_url TEXT,
+      platform_id TEXT NOT NULL,
+      rating REAL CHECK (rating IS NULL OR (rating >= 0 AND rating <= 10)),
+      playtime_minutes INTEGER CHECK (playtime_minutes IS NULL OR playtime_minutes >= 0),
+      start_date TEXT,
+      completion_date TEXT,
+      status TEXT CHECK (status IS NULL OR status IN ('notStarted', 'playing', 'completed', 'dropped')),
+      wishlist_status TEXT CHECK (wishlist_status IS NULL OR wishlist_status IN ('want_to_buy', 'owned', 'started')),
+      list_type TEXT NOT NULL CHECK (list_type IN ('library', 'wishlist')),
+      manual_position INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      local_sync_status TEXT NOT NULL DEFAULT 'pending',
+      remote_version INTEGER
+    )
+  ''';
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 3;
 
   @override
   Iterable<TableInfo<Table, dynamic>> get allTables => const [];
@@ -29,29 +53,7 @@ class AppDatabase extends GeneratedDatabase {
   @override
   MigrationStrategy get migration => MigrationStrategy(
     onCreate: (_) async {
-      await customStatement('''
-            CREATE TABLE games (
-              id TEXT PRIMARY KEY NOT NULL,
-              external_game_id TEXT,
-              source TEXT NOT NULL DEFAULT 'manual',
-              source_game_id TEXT,
-              name TEXT NOT NULL,
-              cover_url TEXT,
-              platform_id TEXT NOT NULL,
-              rating REAL CHECK (rating IS NULL OR (rating >= 0 AND rating <= 10)),
-              playtime_minutes INTEGER CHECK (playtime_minutes IS NULL OR playtime_minutes >= 0),
-              start_date TEXT,
-              completion_date TEXT,
-              status TEXT CHECK (status IS NULL OR status IN ('playing', 'completed', 'dropped')),
-              list_type TEXT NOT NULL CHECK (list_type IN ('library', 'wishlist')),
-              manual_position INTEGER NOT NULL DEFAULT 0,
-              created_at TEXT NOT NULL,
-              updated_at TEXT NOT NULL,
-              deleted_at TEXT,
-              local_sync_status TEXT NOT NULL DEFAULT 'pending',
-              remote_version INTEGER
-            )
-          ''');
+      await customStatement(_createGamesTable);
       await customStatement(
         'CREATE INDEX idx_games_list ON games(list_type, deleted_at, manual_position)',
       );
@@ -75,6 +77,50 @@ class AppDatabase extends GeneratedDatabase {
             )
           ''');
     },
+    onUpgrade: (m, from, to) async {
+      if (from < 2) {
+        await m.database.customStatement('''
+          ALTER TABLE games ADD COLUMN wishlist_status TEXT
+            CHECK (wishlist_status IS NULL OR wishlist_status IN ('want_to_buy', 'owned', 'started'))
+        ''');
+        await m.database.customStatement('''
+          UPDATE games
+          SET wishlist_status = CASE status
+                WHEN 'playing' THEN 'started'
+                WHEN 'completed' THEN 'owned'
+                WHEN 'dropped' THEN 'owned'
+                ELSE 'want_to_buy'
+              END,
+              status = NULL
+          WHERE list_type = 'wishlist'
+        ''');
+      }
+      if (from < 3) {
+        await m.database.customStatement('DROP INDEX IF EXISTS idx_games_list');
+        await m.database.customStatement(
+          'ALTER TABLE games RENAME TO games_before_status_v3',
+        );
+        await m.database.customStatement(_createGamesTable);
+        await m.database.customStatement('''
+          INSERT INTO games (
+            id, external_game_id, source, source_game_id, name, cover_url,
+            platform_id, rating, playtime_minutes, start_date, completion_date,
+            status, wishlist_status, list_type, manual_position, created_at,
+            updated_at, deleted_at, local_sync_status, remote_version
+          )
+          SELECT
+            id, external_game_id, source, source_game_id, name, cover_url,
+            platform_id, rating, playtime_minutes, start_date, completion_date,
+            status, wishlist_status, list_type, manual_position, created_at,
+            updated_at, deleted_at, local_sync_status, remote_version
+          FROM games_before_status_v3
+        ''');
+        await m.database.customStatement('DROP TABLE games_before_status_v3');
+        await m.database.customStatement(
+          'CREATE INDEX idx_games_list ON games(list_type, deleted_at, manual_position)',
+        );
+      }
+    },
   );
 
   Future<List<Game>> getGames(GameListType listType) async {
@@ -93,7 +139,18 @@ class AppDatabase extends GeneratedDatabase {
     return rows.isEmpty ? null : Game.fromRow(rows.first.data);
   }
 
-  Future<Game> saveGame(GameDraft draft, {String? id}) async {
+  Future<Game> saveGame(
+    GameDraft draft, {
+    String? id,
+    bool preserveLegacyWishlistData = false,
+  }) async {
+    if (draft.listType == GameListType.wishlist && draft.status != null) {
+      throw ArgumentError.value(
+        draft.status,
+        'status',
+        'O status da Biblioteca não pode ser usado na Lista de desejos.',
+      );
+    }
     final now = DateTime.now().toUtc();
     final existing = id == null ? null : await getGame(id);
     final gameId = id ?? _uuid.v4();
@@ -109,16 +166,25 @@ class AppDatabase extends GeneratedDatabase {
         position = rows.first.data['next_position']! as int;
       }
       final createdAt = existing?.createdAt ?? now;
-      final start = draft.startDate?.toUtc().toIso8601String();
-      final completion = draft.completionDate?.toUtc().toIso8601String();
+      final isWishlist = draft.listType == GameListType.wishlist;
+      final startDate = isWishlist
+          ? existing?.startDate ??
+                (preserveLegacyWishlistData ? draft.startDate : null)
+          : draft.startDate;
+      final completionDate = isWishlist
+          ? existing?.completionDate ??
+                (preserveLegacyWishlistData ? draft.completionDate : null)
+          : draft.completionDate;
+      final start = startDate?.toUtc().toIso8601String();
+      final completion = completionDate?.toUtc().toIso8601String();
       await customStatement(
         '''
         INSERT INTO games (
           id, external_game_id, source, source_game_id, name, cover_url,
           platform_id, rating, playtime_minutes, start_date, completion_date,
-          status, list_type, manual_position, created_at, updated_at, deleted_at,
+          status, wishlist_status, list_type, manual_position, created_at, updated_at, deleted_at,
           local_sync_status, remote_version
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'pending', ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'pending', ?)
         ON CONFLICT(id) DO UPDATE SET
           external_game_id = excluded.external_game_id,
           source = excluded.source,
@@ -131,6 +197,7 @@ class AppDatabase extends GeneratedDatabase {
           start_date = excluded.start_date,
           completion_date = excluded.completion_date,
           status = excluded.status,
+          wishlist_status = excluded.wishlist_status,
           list_type = excluded.list_type,
           manual_position = excluded.manual_position,
           updated_at = excluded.updated_at,
@@ -145,11 +212,23 @@ class AppDatabase extends GeneratedDatabase {
           draft.name.trim(),
           _emptyToNull(draft.coverUrl),
           draft.platformId,
-          draft.rating,
-          draft.playtimeMinutes,
+          draft.listType == GameListType.wishlist
+              ? existing?.rating ??
+                    (preserveLegacyWishlistData ? draft.rating : null)
+              : draft.rating,
+          isWishlist
+              ? existing?.playtimeMinutes ??
+                    (preserveLegacyWishlistData ? draft.playtimeMinutes : null)
+              : draft.playtimeMinutes,
           start,
           completion,
           draft.listType == GameListType.wishlist ? null : draft.status?.name,
+          isWishlist
+              ? existing?.wishlistStatus?.storageValue ??
+                    (preserveLegacyWishlistData
+                        ? draft.wishlistStatus?.storageValue
+                        : null)
+              : draft.wishlistStatus?.storageValue,
           draft.listType.name,
           position,
           createdAt.toIso8601String(),
@@ -199,7 +278,7 @@ class AppDatabase extends GeneratedDatabase {
     });
   }
 
-  Future<void> moveToLibrary(String id, GameStatus status) async {
+  Future<void> moveToLibrary(String id) async {
     final now = DateTime.now().toUtc();
     await transaction(() async {
       final rows = await customSelect(
@@ -219,11 +298,37 @@ class AppDatabase extends GeneratedDatabase {
           updated_at = ?, local_sync_status = 'pending' WHERE id = ?
       ''',
         [
-          status.name,
+          GameStatus.notStarted.name,
           next.first.data['next_position'],
           now.toIso8601String(),
           id,
         ],
+      );
+      await _queueGame((await getGame(id))!, type: 'upsert');
+    });
+  }
+
+  Future<void> moveToWishlist(String id) async {
+    final now = DateTime.now().toUtc();
+    await transaction(() async {
+      final rows = await customSelect(
+        'SELECT * FROM games WHERE id = ? AND deleted_at IS NULL',
+        variables: [Variable.withString(id)],
+      ).get();
+      if (rows.isEmpty) return;
+      final game = Game.fromRow(rows.first.data);
+      if (game.listType == GameListType.wishlist) return;
+      final next = await customSelect(
+        '''SELECT COALESCE(MAX(manual_position), -1) + 1 AS next_position
+           FROM games WHERE list_type = 'wishlist' AND deleted_at IS NULL''',
+      ).get();
+      await customStatement(
+        '''
+        UPDATE games SET list_type = 'wishlist', status = NULL,
+          manual_position = ?, updated_at = ?,
+          local_sync_status = 'pending' WHERE id = ?
+      ''',
+        [next.first.data['next_position'], now.toIso8601String(), id],
       );
       await _queueGame((await getGame(id))!, type: 'upsert');
     });
@@ -443,7 +548,22 @@ class AppDatabase extends GeneratedDatabase {
     }
 
     final source = data['source'] as String? ?? GameSource.manual.name;
-    final status = data['status'] as String?;
+    final remoteStatus = data['status'] as String?;
+    final isWishlist = listType == GameListType.wishlist.name;
+    final status =
+        isWishlist ||
+            !GameStatus.values.any((value) => value.name == remoteStatus)
+        ? null
+        : remoteStatus;
+    final wishlistStatus = data.containsKey('wishlistStatus')
+        ? wishlistStatusFromStorage(data['wishlistStatus'])
+        : isWishlist
+        ? switch (remoteStatus) {
+            'playing' => WishlistStatus.started,
+            'completed' || 'dropped' => WishlistStatus.owned,
+            _ => WishlistStatus.wantToBuy,
+          }
+        : null;
     final createdAt = data['createdAt'] as String? ?? updatedAt;
     final remoteVersion = data['remoteVersion'] as int? ?? 1;
     final deletedAt = data['deletedAt'] as String?;
@@ -452,9 +572,9 @@ class AppDatabase extends GeneratedDatabase {
       INSERT INTO games (
         id, external_game_id, source, source_game_id, name, cover_url,
         platform_id, rating, playtime_minutes, start_date, completion_date,
-        status, list_type, manual_position, created_at, updated_at, deleted_at,
+        status, wishlist_status, list_type, manual_position, created_at, updated_at, deleted_at,
         local_sync_status, remote_version
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'synced', ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'synced', ?)
       ON CONFLICT(id) DO UPDATE SET
         external_game_id = excluded.external_game_id,
         source = excluded.source,
@@ -467,6 +587,7 @@ class AppDatabase extends GeneratedDatabase {
         start_date = excluded.start_date,
         completion_date = excluded.completion_date,
         status = excluded.status,
+        wishlist_status = excluded.wishlist_status,
         list_type = excluded.list_type,
         manual_position = excluded.manual_position,
         created_at = excluded.created_at,
@@ -488,6 +609,7 @@ class AppDatabase extends GeneratedDatabase {
         data['startDate'],
         data['completionDate'],
         status,
+        wishlistStatus?.storageValue,
         listType,
         (data['manualPosition'] as num?)?.toInt() ?? 0,
         createdAt,
@@ -525,8 +647,10 @@ class AppDatabase extends GeneratedDatabase {
             startDate: game.startDate,
             completionDate: game.completionDate,
             status: game.status,
+            wishlistStatus: game.wishlistStatus,
           ),
           id: game.id,
+          preserveLegacyWishlistData: true,
         );
         importedGames++;
       }

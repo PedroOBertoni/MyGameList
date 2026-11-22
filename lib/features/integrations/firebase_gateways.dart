@@ -45,24 +45,26 @@ class FirebaseAuthGateway implements AuthGateway {
     }
 
     final googleSignIn = GoogleSignIn.instance;
-    _googleSignInInitialization ??= googleSignIn.initialize();
-    await _googleSignInInitialization;
+    final initialization = _googleSignInInitialization ??= googleSignIn
+        .initialize();
     try {
-      final account = await googleSignIn.authenticate();
-      final idToken = account.authentication.idToken;
-      if (idToken == null || idToken.isEmpty) {
-        throw FirebaseAuthException(
-          code: 'invalid-credential',
-          message: 'O Google não retornou um token de autenticação.',
-        );
-      }
-      await _auth.signInWithCredential(
-        GoogleAuthProvider.credential(idToken: idToken),
-      );
-    } on GoogleSignInException catch (error) {
-      if (error.code == GoogleSignInExceptionCode.canceled) return;
+      await initialization;
+    } catch (_) {
+      _googleSignInInitialization = null;
       rethrow;
     }
+
+    final account = await googleSignIn.authenticate();
+    final idToken = account.authentication.idToken;
+    if (idToken == null || idToken.isEmpty) {
+      throw FirebaseAuthException(
+        code: 'google-id-token-missing',
+        message: 'O Google não retornou um token de autenticação.',
+      );
+    }
+    await _auth.signInWithCredential(
+      GoogleAuthProvider.credential(idToken: idToken),
+    );
   }
 
   @override

@@ -8,7 +8,6 @@ import 'package:go_router/go_router.dart';
 import '../../core/models/game.dart';
 import '../../core/models/game_sort.dart';
 import '../../core/providers/app_providers.dart';
-import '../../core/sync/sync_status_banner.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/game_cover_image.dart';
 import 'library_header_art.dart';
@@ -94,7 +93,18 @@ class _GameListScreenState extends ConsumerState<GameListScreen> {
   ) {
     _clearReorderPreviewWhenSynced(games, preferences);
     final displayedGames = _reorderPreviewGames ?? games;
-    final displayedPreferences = _reorderPreviewPreferences ?? preferences;
+    final initialPreferences = _reorderPreviewPreferences ?? preferences;
+    final displayedPreferences =
+        sortModeForList(widget.listType, initialPreferences.sortMode) !=
+            initialPreferences.sortMode
+        ? ListPreferences(
+            sortMode: sortModeForList(
+              widget.listType,
+              initialPreferences.sortMode,
+            ),
+            tieOrders: initialPreferences.tieOrders,
+          )
+        : initialPreferences;
     final sorted = _reorderPreviewGames == null
         ? sortGames(
             displayedGames,
@@ -107,46 +117,36 @@ class _GameListScreenState extends ConsumerState<GameListScreen> {
       final matchesName =
           query.isEmpty || game.name.toLowerCase().contains(query);
       final matchesPlatform =
+          isWishlist ||
           _platformFilter == null ||
           platformFamilyId(game.platformId) == _platformFilter;
-      final matchesStatus =
-          _statusFilter == null || game.status == _statusFilter;
+      final matchesStatus = isWishlist ||
+          _statusFilter == null ||
+          game.status == _statusFilter;
       return matchesName && matchesPlatform && matchesStatus;
     }).toList();
-    final filtered =
-        query.isNotEmpty || _platformFilter != null || _statusFilter != null;
+    final filtered = isWishlist
+        ? query.isNotEmpty
+        : query.isNotEmpty || _platformFilter != null || _statusFilter != null;
     return CustomScrollView(
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       slivers: [
         SliverToBoxAdapter(child: _header(isWishlist)),
-        if (isWishlist) const SliverToBoxAdapter(child: SyncStatusBanner()),
         SliverToBoxAdapter(
           child: isWishlist
               ? _searchField(context)
               : _librarySearchField(context, displayedPreferences, isWishlist),
         ),
-        SliverToBoxAdapter(
-          child: isWishlist
-              ? _wishlistSummary(displayedGames.length)
-              : _stats(context, displayedGames),
-        ),
-        if (isWishlist)
-          SliverToBoxAdapter(child: _filters(context, isWishlist)),
-        if (isWishlist)
-          SliverToBoxAdapter(
-            child: _rankingControls(
-              context,
-              displayedPreferences,
-              filtered,
-              isWishlist,
-            ),
-          ),
+        if (!isWishlist)
+          SliverToBoxAdapter(child: _stats(context, displayedGames)),
         if (filtered)
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
               child: Text(
-                'Limpe a busca e os filtros para reorganizar a lista completa.',
+                isWishlist
+                    ? 'Limpe a busca para reorganizar a lista completa.'
+                    : 'Limpe a busca e os filtros para reorganizar a lista completa.',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
@@ -162,12 +162,7 @@ class _GameListScreenState extends ConsumerState<GameListScreen> {
           )
         else
           SliverPadding(
-            padding: EdgeInsets.fromLTRB(
-              isWishlist ? 12 : 10,
-              0,
-              isWishlist ? 12 : 10,
-              8,
-            ),
+            padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
             sliver: SliverReorderableList(
               itemCount: visible.length,
               onReorderItem: filtered
@@ -230,6 +225,7 @@ class _GameListScreenState extends ConsumerState<GameListScreen> {
       _discardReorderPreview();
       context.push('/add?list=${widget.listType.name}');
     },
+    onAddLongPress: isWishlist ? _showWishlistSortMenu : null,
     useImageBackground: true,
   );
 
@@ -483,17 +479,25 @@ class _GameListScreenState extends ConsumerState<GameListScreen> {
               ),
               const SizedBox(height: 16),
               DropdownButtonFormField<GameSortMode>(
-                initialValue: preferences.sortMode,
+                initialValue: sortModeForList(
+                  isWishlist ? GameListType.wishlist : GameListType.library,
+                  preferences.sortMode,
+                ),
                 isExpanded: true,
                 decoration: const InputDecoration(labelText: 'Ordenar por'),
-                items: GameSortMode.values
-                    .map(
-                      (mode) => DropdownMenuItem(
-                        value: mode,
-                        child: Text(mode.label),
-                      ),
-                    )
-                    .toList(),
+                items:
+                    sortModesForList(
+                          isWishlist
+                              ? GameListType.wishlist
+                              : GameListType.library,
+                        )
+                        .map(
+                          (mode) => DropdownMenuItem(
+                            value: mode,
+                            child: Text(mode.label),
+                          ),
+                        )
+                        .toList(),
                 onChanged: (mode) {
                   if (mode == null) return;
                   Navigator.pop(sheetContext);
@@ -665,190 +669,60 @@ class _GameListScreenState extends ConsumerState<GameListScreen> {
     );
   }
 
-  Widget _wishlistSummary(int total) => Padding(
-    padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-    child: Container(
-      height: 58,
-      padding: const EdgeInsets.symmetric(horizontal: 14),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: Theme.of(
-            context,
-          ).colorScheme.outlineVariant.withValues(alpha: .38),
-        ),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.favorite_border_rounded, color: AppColors.accent(context)),
-          const SizedBox(width: 10),
-          const Expanded(child: Text('Jogos na lista')),
-          Text(
-            '$total',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              color: AppColors.accent(context),
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-        ],
-      ),
-    ),
-  );
+  Future<void> _showWishlistSortMenu() async {
+    var selectedMode = GameSortMode.manual;
+    try {
+      final preferences = await ref.read(
+        listPreferencesProvider(GameListType.wishlist).future,
+      );
+      selectedMode = sortModeForList(
+        GameListType.wishlist,
+        preferences.sortMode,
+      );
+    } catch (_) {
+      // Manual order is the wishlist's safe fallback.
+    }
+    if (!mounted) return;
 
-  Widget _filters(BuildContext context, bool isWishlist) {
-    final platformOptions = <(String, String)>[
-      ('__all__', 'Todas'),
-      ...gamePlatforms,
-    ];
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-      child: Row(
-        children: [
-          Expanded(
-            child: _choiceButton<String>(
-              context,
-              label: 'Plataforma',
-              valueLabel: _platformFilter == null
-                  ? 'Todas'
-                  : platformLabel(_platformFilter!),
-              icon: Icons.devices_rounded,
-              options: platformOptions,
-              onSelected: (value) => setState(
-                () => _platformFilter = value == '__all__' ? null : value,
-              ),
-            ),
-          ),
-          if (!isWishlist) ...[
-            const SizedBox(width: 8),
-            Expanded(
-              child: _choiceButton<String>(
-                context,
-                label: 'Status',
-                valueLabel: _statusFilter?.label ?? 'Todos',
-                icon: Icons.filter_list_rounded,
-                options: [
-                  const ('__all__', 'Todos'),
-                  ...GameStatus.values.map(
-                    (status) => (status.name, status.label),
-                  ),
-                ],
-                onSelected: (value) => setState(
-                  () => _statusFilter = value == '__all__'
-                      ? null
-                      : GameStatus.values.firstWhere(
-                          (status) => status.name == value,
-                        ),
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 10),
+              child: Text(
+                'Ordenar desejos',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
                 ),
               ),
             ),
+            for (final mode in sortModesForList(GameListType.wishlist))
+              ListTile(
+                leading: Icon(
+                  selectedMode == mode
+                      ? Icons.radio_button_checked_rounded
+                      : Icons.radio_button_unchecked_rounded,
+                  color: selectedMode == mode
+                      ? AppColors.accent(context)
+                      : Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+                title: Text(mode.label),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  unawaited(_changeSort(mode));
+                },
+              ),
+            const SizedBox(height: 8),
           ],
-        ],
+        ),
       ),
     );
   }
-
-  Widget _rankingControls(
-    BuildContext context,
-    ListPreferences preferences,
-    bool filtered,
-    bool isWishlist,
-  ) => Padding(
-    padding: const EdgeInsets.fromLTRB(16, 2, 16, 8),
-    child: Row(
-      children: [
-        Expanded(
-          child: Row(
-            children: [
-              Flexible(
-                child: Text(
-                  isWishlist ? 'Sua lista' : 'Ranking',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-              if (filtered) ...[
-                const SizedBox(width: 6),
-                const Tooltip(
-                  message:
-                      'Limpe busca e filtros para reorganizar a lista completa.',
-                  child: Icon(Icons.info_outline_rounded, size: 16),
-                ),
-              ],
-            ],
-          ),
-        ),
-        const SizedBox(width: 8),
-        SizedBox(
-          width: 178,
-          child: _choiceButton<GameSortMode>(
-            context,
-            label: 'Ordenar',
-            valueLabel: preferences.sortMode.label,
-            icon: Icons.sort_rounded,
-            options: GameSortMode.values
-                .map((mode) => (mode, mode.label))
-                .toList(),
-            onSelected: _changeSort,
-          ),
-        ),
-      ],
-    ),
-  );
-
-  Widget _choiceButton<T>(
-    BuildContext context, {
-    required String label,
-    required String valueLabel,
-    required IconData icon,
-    required List<(T, String)> options,
-    required ValueChanged<T> onSelected,
-  }) => PopupMenuButton<T>(
-    tooltip: label,
-    onSelected: onSelected,
-    itemBuilder: (context) => options
-        .map(
-          (option) =>
-              PopupMenuItem<T>(value: option.$1, child: Text(option.$2)),
-        )
-        .toList(),
-    child: Container(
-      height: 38,
-      padding: const EdgeInsets.symmetric(horizontal: 10),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(13),
-        border: Border.all(
-          color: Theme.of(
-            context,
-          ).colorScheme.outlineVariant.withValues(alpha: .4),
-        ),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, size: 16, color: Theme.of(context).colorScheme.primary),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Text(
-              valueLabel,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.labelMedium,
-            ),
-          ),
-          const SizedBox(width: 2),
-          Icon(
-            Icons.expand_more_rounded,
-            size: 16,
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-          ),
-        ],
-      ),
-    ),
-  );
 
   Widget _emptyState(
     BuildContext context,
@@ -911,6 +785,9 @@ class _GameListScreenState extends ConsumerState<GameListScreen> {
   );
 
   Future<void> _changeSort(GameSortMode mode) async {
+    if (!sortModesForList(widget.listType).contains(mode)) {
+      mode = GameSortMode.manual;
+    }
     if (_reorderPreviewGames != null) {
       setState(_discardReorderPreview);
     }
@@ -1170,6 +1047,7 @@ class GameCard extends StatelessWidget {
     required this.onOpen,
     required this.onLongPress,
     required this.onDelete,
+    this.showLibraryMeta = true,
     super.key,
   });
 
@@ -1183,6 +1061,7 @@ class GameCard extends StatelessWidget {
   final VoidCallback onOpen;
   final VoidCallback onLongPress;
   final VoidCallback onDelete;
+  final bool showLibraryMeta;
 
   @override
   Widget build(BuildContext context) {
@@ -1207,7 +1086,9 @@ class GameCard extends StatelessWidget {
           final narrow = constraints.maxWidth < 370;
           final coverWidth = narrow ? 69.0 : 86.0;
           final coverHeight = narrow ? 84.0 : 96.0;
-          final positionText = position <= 5 ? '#$position' : '$position';
+          final positionText = showLibraryMeta && position > 5
+              ? '$position'
+              : '#$position';
           final positionWidth =
               (narrow ? 26.0 : 32.0) +
               (positionText.length > 2
@@ -1281,112 +1162,109 @@ class GameCard extends StatelessWidget {
                         ),
                         const SizedBox(height: 6),
                         _PlatformLabel(game: game),
-                        LayoutBuilder(
-                          builder: (context, constraints) {
-                            return Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 4),
-                              child: Align(
-                                alignment: Alignment.centerLeft,
-                                child: SizedBox(
-                                  width: constraints.maxWidth,
-                                  child: Divider(
-                                    height: 1,
-                                    color: theme.colorScheme.outlineVariant
-                                        .withValues(alpha: .4),
+                        if (showLibraryMeta) ...[
+                          LayoutBuilder(
+                            builder: (context, constraints) {
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 4,
+                                ),
+                                child: Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: SizedBox(
+                                    width: constraints.maxWidth,
+                                    child: Divider(
+                                      height: 1,
+                                      color: theme.colorScheme.outlineVariant
+                                          .withValues(alpha: .4),
+                                    ),
                                   ),
                                 ),
-                              ),
-                            );
-                          },
-                        ),
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.schedule_rounded,
-                              size: 15,
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              game.playtimeMinutes == null
-                                  ? '— h'
-                                  : '${game.playtimeHours!.toStringAsFixed(game.playtimeHours! % 1 == 0 ? 0 : 1)}h',
-                              style: theme.textTheme.bodySmall?.copyWith(
+                              );
+                            },
+                          ),
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.schedule_rounded,
+                                size: 15,
                                 color: theme.colorScheme.onSurfaceVariant,
-                                fontWeight: FontWeight.w600,
                               ),
-                            ),
-                          ],
-                        ),
+                              const SizedBox(width: 4),
+                              Text(
+                                game.playtimeMinutes == null
+                                    ? '— h'
+                                    : '${game.playtimeHours!.toStringAsFixed(game.playtimeHours! % 1 == 0 ? 0 : 1)}h',
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ],
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      SizedBox(
-                        width: statusContentWidth,
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            if (game.rating != null)
-                              Container(
-                                padding: EdgeInsets.symmetric(
-                                  horizontal: narrow ? 5 : 8,
-                                  vertical: 5,
+                  if (showLibraryMeta) ...[
+                    const SizedBox(width: 8),
+                    SizedBox(
+                      width: statusContentWidth,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          if (game.rating != null)
+                            Container(
+                              padding: EdgeInsets.symmetric(
+                                horizontal: narrow ? 5 : 8,
+                                vertical: 5,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.gold.withValues(alpha: .08),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: AppColors.gold.withValues(alpha: .78),
                                 ),
-                                decoration: BoxDecoration(
-                                  color: AppColors.gold.withValues(alpha: .08),
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
-                                    color: AppColors.gold.withValues(
-                                      alpha: .78,
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.star_rounded,
+                                    color: AppColors.gold,
+                                    size: narrow ? 14 : 17,
+                                  ),
+                                  const SizedBox(width: 2),
+                                  Text(
+                                    game.rating!.toStringAsFixed(1),
+                                    style: theme.textTheme.labelLarge?.copyWith(
+                                      color: AppColors.gold,
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: narrow ? 11 : 14,
                                     ),
                                   ),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.star_rounded,
-                                      color: AppColors.gold,
-                                      size: narrow ? 14 : 17,
-                                    ),
-                                    const SizedBox(width: 2),
-                                    Text(
-                                      game.rating!.toStringAsFixed(1),
-                                      style: theme.textTheme.labelLarge
-                                          ?.copyWith(
-                                            color: AppColors.gold,
-                                            fontWeight: FontWeight.w900,
-                                            fontSize: narrow ? 11 : 14,
-                                          ),
-                                    ),
-                                  ],
-                                ),
+                                ],
                               ),
-                            if (game.status != null) ...[
-                              if (game.rating != null)
-                                SizedBox(height: narrow ? 8 : 10),
-                              _StatusChip(
-                                status: game.status!,
-                                compact: narrow,
-                              ),
-                            ],
+                            ),
+                          if (game.status != null) ...[
+                            if (game.rating != null)
+                              SizedBox(height: narrow ? 8 : 10),
+                            _StatusChip(
+                              status: game.status!,
+                              compact: narrow,
+                            ),
                           ],
-                        ),
+                        ],
                       ),
-                      SizedBox(width: narrow ? 4 : 7),
-                      _LibraryDragHandle(
-                        index: index,
-                        draggable: draggable,
-                        selected: selected,
-                        selectionMode: selectionMode,
-                      ),
-                    ],
+                    ),
+                  ],
+                  SizedBox(width: narrow ? 4 : 7),
+                  _LibraryDragHandle(
+                    index: index,
+                    draggable: draggable,
+                    selected: selected,
+                    selectionMode: selectionMode,
                   ),
                 ],
               ),
@@ -1504,11 +1382,13 @@ class _StatusChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = switch (status) {
+      GameStatus.notStarted => AppColors.muted,
       GameStatus.completed => AppColors.green,
       GameStatus.playing => AppColors.playingBlue,
       GameStatus.dropped => AppColors.red,
     };
     final label = switch (status) {
+      GameStatus.notStarted => 'Não iniciado',
       GameStatus.completed => 'Concluído',
       GameStatus.playing => 'Jogando',
       GameStatus.dropped => 'Dropado',
@@ -1559,169 +1439,17 @@ class WishlistGameCard extends StatelessWidget {
   final VoidCallback onDelete;
 
   @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Card(
-      margin: const EdgeInsets.only(bottom: 10),
-      color: selected
-          ? AppColors.gold.withValues(alpha: .12)
-          : theme.colorScheme.surface,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(18),
-        side: BorderSide(
-          color: selected
-              ? AppColors.gold.withValues(alpha: .9)
-              : theme.colorScheme.outlineVariant.withValues(alpha: .3),
-          width: selected ? 1.5 : 1,
-        ),
-      ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(18),
-        onTap: onOpen,
-        onLongPress: onLongPress,
-        child: Padding(
-          padding: const EdgeInsets.all(10),
-          child: Row(
-            children: [
-              SizedBox(
-                width: 28,
-                child: Center(
-                  child: Text(
-                    '$position',
-                    style: theme.textTheme.labelLarge?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: SizedBox(
-                  width: 62,
-                  height: 78,
-                  child: GameCoverImage(game: game),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      game.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      platformLabel(game.platformId),
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 5,
-                      children: [
-                        if (game.rating != null)
-                          _WishlistPill(
-                            label: '★ ${game.rating!.toStringAsFixed(1)}',
-                            color: AppColors.gold,
-                          ),
-                        if (game.playtimeMinutes != null)
-                          _WishlistPill(
-                            label:
-                                '${(game.playtimeMinutes! / 60).toStringAsFixed(1)} h',
-                            color: theme.colorScheme.secondary,
-                          ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              if (!selectionMode)
-                PopupMenuButton<String>(
-                  tooltip: 'Opções do jogo',
-                  onSelected: (value) =>
-                      value == 'edit' ? onEdit() : onDelete(),
-                  itemBuilder: (context) => const [
-                    PopupMenuItem(
-                      value: 'edit',
-                      child: ListTile(
-                        leading: Icon(Icons.edit_outlined),
-                        title: Text('Editar'),
-                      ),
-                    ),
-                    PopupMenuItem(
-                      value: 'delete',
-                      child: ListTile(
-                        leading: Icon(Icons.delete_outline),
-                        title: Text('Excluir'),
-                      ),
-                    ),
-                  ],
-                ),
-              if (selectionMode)
-                SizedBox(
-                  width: 48,
-                  child: Center(
-                    child: Icon(
-                      selected
-                          ? Icons.check_circle_rounded
-                          : Icons.radio_button_unchecked_rounded,
-                      color: selected ? AppColors.gold : AppColors.muted,
-                    ),
-                  ),
-                )
-              else if (draggable)
-                ReorderableDragStartListener(
-                  index: index,
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 6, vertical: 10),
-                    child: Icon(Icons.drag_indicator_rounded),
-                  ),
-                )
-              else
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 6, vertical: 10),
-                  child: Icon(
-                    Icons.drag_indicator_rounded,
-                    color: AppColors.muted,
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _WishlistPill extends StatelessWidget {
-  const _WishlistPill({required this.label, required this.color});
-
-  final String label;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-    decoration: BoxDecoration(
-      color: color.withValues(alpha: .14),
-      borderRadius: BorderRadius.circular(99),
-    ),
-    child: Text(
-      label,
-      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-        color: color,
-        fontWeight: FontWeight.w800,
-      ),
-    ),
+  Widget build(BuildContext context) => GameCard(
+    game: game,
+    position: position,
+    index: index,
+    draggable: draggable,
+    selected: selected,
+    selectionMode: selectionMode,
+    onEdit: onEdit,
+    onOpen: onOpen,
+    onLongPress: onLongPress,
+    onDelete: onDelete,
+    showLibraryMeta: false,
   );
 }

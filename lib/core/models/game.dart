@@ -1,6 +1,29 @@
 enum GameListType { library, wishlist }
 
-enum GameStatus { playing, completed, dropped }
+enum GameStatus { notStarted, playing, completed, dropped }
+
+enum WishlistStatus { wantToBuy, owned, started }
+
+extension WishlistStatusDetails on WishlistStatus {
+  String get storageValue => switch (this) {
+    WishlistStatus.wantToBuy => 'want_to_buy',
+    WishlistStatus.owned => 'owned',
+    WishlistStatus.started => 'started',
+  };
+
+  String get label => switch (this) {
+    WishlistStatus.wantToBuy => 'Quero comprar',
+    WishlistStatus.owned => 'Já tenho',
+    WishlistStatus.started => 'Iniciado',
+  };
+}
+
+WishlistStatus? wishlistStatusFromStorage(Object? value) => switch (value) {
+  'want_to_buy' || 'wantToBuy' => WishlistStatus.wantToBuy,
+  'owned' => WishlistStatus.owned,
+  'started' => WishlistStatus.started,
+  _ => null,
+};
 
 enum GameSource { manual, steam, epic, rawg }
 
@@ -25,9 +48,10 @@ extension GameListTypeLabel on GameListType {
 
 extension GameStatusLabel on GameStatus {
   String get label => switch (this) {
+    GameStatus.notStarted => 'Não iniciado',
     GameStatus.playing => 'Jogando',
     GameStatus.completed => 'Concluído',
-    GameStatus.dropped => 'Abandonado',
+    GameStatus.dropped => 'Dropado',
   };
 }
 
@@ -65,6 +89,20 @@ extension GameSortModeLabel on GameSortMode {
       this == GameSortMode.playtimeDescending;
 }
 
+List<GameSortMode> sortModesForList(GameListType listType) =>
+    listType == GameListType.wishlist
+    ? const [
+        GameSortMode.manual,
+        GameSortMode.nameAscending,
+        GameSortMode.nameDescending,
+      ]
+    : GameSortMode.values;
+
+GameSortMode sortModeForList(GameListType listType, GameSortMode mode) =>
+    listType == GameListType.wishlist && (mode.isRating || mode.isPlaytime)
+    ? GameSortMode.manual
+    : mode;
+
 class Game {
   const Game({
     required this.id,
@@ -82,6 +120,7 @@ class Game {
     this.startDate,
     this.completionDate,
     this.status,
+    this.wishlistStatus,
     this.manualPosition = 0,
     this.deletedAt,
     this.localSyncStatus = 'pending',
@@ -100,6 +139,7 @@ class Game {
   final DateTime? startDate;
   final DateTime? completionDate;
   final GameStatus? status;
+  final WishlistStatus? wishlistStatus;
   final GameListType listType;
   final int manualPosition;
   final DateTime createdAt;
@@ -124,6 +164,7 @@ class Game {
     'startDate': startDate?.toIso8601String(),
     'completionDate': completionDate?.toIso8601String(),
     'status': status?.name,
+    'wishlistStatus': wishlistStatus?.storageValue,
     'listType': listType.name,
     'manualPosition': manualPosition,
     'createdAt': createdAt.toIso8601String(),
@@ -148,6 +189,7 @@ class Game {
     status: row['status'] == null
         ? null
         : GameStatus.values.byName(row['status']! as String),
+    wishlistStatus: wishlistStatusFromStorage(row['wishlist_status']),
     listType: GameListType.values.byName(row['list_type']! as String),
     manualPosition: row['manual_position']! as int,
     createdAt: DateTime.parse(row['created_at']! as String),
@@ -175,6 +217,7 @@ class GameDraft {
     this.startDate,
     this.completionDate,
     this.status,
+    this.wishlistStatus,
   });
 
   final String name;
@@ -189,6 +232,7 @@ class GameDraft {
   final DateTime? startDate;
   final DateTime? completionDate;
   final GameStatus? status;
+  final WishlistStatus? wishlistStatus;
 }
 
 const gamePlatforms = <(String, String)>[
