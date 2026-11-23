@@ -177,17 +177,27 @@ class SteamLibraryImporter implements PlatformLibraryImporter {
       return null;
     }
 
-    final playtime = data['playtime_forever'];
+    final playtime = _playtimeMinutes(data['playtime_forever']);
     return CatalogGame(
       externalId: appId,
       sourceGameId: appId,
       name: name,
       coverUrl: steamLibraryCoverUrl(appId),
-      playtimeMinutes: playtime is num
-          ? playtime.round()
-          : int.tryParse(playtime?.toString() ?? ''),
+      playtimeMinutes: playtime,
       platformNames: const ['PC'],
     );
+  }
+
+  int? _playtimeMinutes(Object? value) {
+    final parsed = switch (value) {
+      final num number when number.isFinite => number,
+      final String string => num.tryParse(string.trim()),
+      _ => null,
+    };
+    if (parsed == null || !parsed.isFinite || parsed < 0) return null;
+
+    // Steam's playtime_forever is already measured in minutes.
+    return parsed.toInt();
   }
 
   Map<String, dynamic>? _object(Object? value) => value is Map

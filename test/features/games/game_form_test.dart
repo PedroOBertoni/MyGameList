@@ -18,7 +18,7 @@ void main() {
     expect(find.text('Lista de destino'), findsOneWidget);
     expect(find.text('Biblioteca'), findsOneWidget);
     expect(find.text('Status da biblioteca *'), findsOneWidget);
-    expect(find.text('Não iniciado'), findsOneWidget);
+    expect(find.text('Pendente'), findsOneWidget);
 
     await tester.tap(find.text('PC'));
     await tester.pumpAndSettle();

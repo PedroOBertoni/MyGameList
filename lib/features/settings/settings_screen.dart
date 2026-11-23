@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/models/game.dart';
 import '../../core/providers/app_providers.dart';
 import '../../core/theme/app_theme.dart';
+import '../integrations/steam_library_sync.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -407,54 +408,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       final importer = ref.read(platformLibraryImporterProvider);
       final steamGames = await importer.previewSteamLibrary(profile);
       final repository = await ref.read(gameRepositoryProvider.future);
-      final existingGames = <Game>[
-        ...await repository.getGames(GameListType.library),
-        ...await repository.getGames(GameListType.wishlist),
-      ];
-      final existingNames = existingGames
-          .map((game) => _normalizeGameName(game.name))
-          .where((name) => name.isNotEmpty)
-          .toSet();
-      final existingSteamIds = existingGames
-          .where((game) => game.source == GameSource.steam)
-          .map((game) => game.sourceGameId ?? game.externalGameId ?? '')
-          .where((id) => id.isNotEmpty)
-          .toSet();
-
-      var importedCount = 0;
-      var duplicateCount = 0;
-      for (final steamGame in steamGames) {
-        final sourceGameId = steamGame.sourceGameId ?? steamGame.externalId;
-        if (sourceGameId.isNotEmpty &&
-            existingSteamIds.contains(sourceGameId)) {
-          duplicateCount++;
-          continue;
-        }
-
-        final normalizedName = _normalizeGameName(steamGame.name);
-        if (normalizedName.isNotEmpty &&
-            existingNames.contains(normalizedName)) {
-          duplicateCount++;
-          continue;
-        }
-
-        await repository.saveGame(
-          GameDraft(
-            name: steamGame.name,
-            platformId: 'pc',
-            listType: GameListType.library,
-            source: GameSource.steam,
-            externalGameId: steamGame.externalId,
-            sourceGameId: sourceGameId,
-            coverUrl: steamGame.coverUrl,
-            rating: null,
-            playtimeMinutes: steamGame.playtimeMinutes,
-            status: GameStatus.completed,
-          ),
-        );
-        importedCount++;
-        if (sourceGameId.isNotEmpty) existingSteamIds.add(sourceGameId);
-      }
+      final syncResult = await SteamLibrarySync(repository).sync(steamGames);
+      final importedCount = syncResult.importedCount;
+      final duplicateCount = syncResult.duplicateCount;
 
       await repository.writePreference(_steamProfilePreferenceKey, profile);
       if (!mounted) return;
@@ -465,7 +421,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
       final message = steamGames.isEmpty
           ? 'Perfil vinculado, mas nenhum jogo ficou visível. Confira a privacidade dos jogos na Steam.'
-          : 'Importados $importedCount jogos; $duplicateCount já estavam nas suas listas.';
+          : 'Importados $importedCount jogos; horas atualizadas em ${syncResult.updatedCount}; '
+                '$duplicateCount j\u00e1 estavam nas suas listas.';
       _showMessage(message);
     } catch (error) {
       if (mounted) _showMessage(error.toString());
@@ -548,26 +505,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       ),
     );
   }
-}
-
-String _normalizeGameName(String value) {
-  var normalized = value.trim().toLowerCase();
-  const accentGroups = <String, String>{
-    'áàâãä': 'a',
-    'éèêë': 'e',
-    'íìîï': 'i',
-    'óòôõö': 'o',
-    'úùûü': 'u',
-    'ç': 'c',
-    'ñ': 'n',
-    'ýÿ': 'y',
-  };
-  for (final entry in accentGroups.entries) {
-    for (final character in entry.key.split('')) {
-      normalized = normalized.replaceAll(character, entry.value);
-    }
-  }
-  return normalized.replaceAll(RegExp(r'[\s\-_–—:;,.!]+'), '');
 }
 
 class _IntegrationRow extends StatelessWidget {

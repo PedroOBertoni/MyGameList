@@ -1387,12 +1387,7 @@ class _StatusChip extends StatelessWidget {
       GameStatus.playing => AppColors.playingBlue,
       GameStatus.dropped => AppColors.red,
     };
-    final label = switch (status) {
-      GameStatus.notStarted => 'Não iniciado',
-      GameStatus.completed => 'Concluído',
-      GameStatus.playing => 'Jogando',
-      GameStatus.dropped => 'Dropado',
-    };
+    final label = status.label;
     return Container(
       padding: EdgeInsets.symmetric(horizontal: compact ? 5 : 7, vertical: 2),
       decoration: BoxDecoration(
@@ -1401,6 +1396,7 @@ class _StatusChip extends StatelessWidget {
       ),
       child: Text(
         label,
+        textAlign: TextAlign.center,
         style: Theme.of(context).textTheme.bodySmall?.copyWith(
           color: color,
           fontWeight: FontWeight.w800,

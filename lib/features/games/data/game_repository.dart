@@ -7,6 +7,7 @@ abstract interface class GameRepository {
   Future<List<Game>> getGames(GameListType listType);
   Future<Game?> getGame(String id);
   Future<Game> saveGame(GameDraft draft, {String? id});
+  Future<Game?> updateSteamGamePlaytime(String id, int playtimeMinutes);
   Future<void> deleteGame(String id);
   Future<void> deleteGames(List<String> ids);
   Future<void> moveToLibrary(String id);
@@ -42,6 +43,13 @@ class DriftGameRepository implements GameRepository {
   Future<Game> saveGame(GameDraft draft, {String? id}) async {
     final game = await _database.saveGame(draft, id: id);
     _notifyMutation();
+    return game;
+  }
+
+  @override
+  Future<Game?> updateSteamGamePlaytime(String id, int playtimeMinutes) async {
+    final game = await _database.updateSteamGamePlaytime(id, playtimeMinutes);
+    if (game != null) _notifyMutation();
     return game;
   }
 

@@ -2,6 +2,14 @@ enum GameListType { library, wishlist }
 
 enum GameStatus { notStarted, playing, completed, dropped }
 
+GameStatus? gameStatusFromStorage(Object? value) => switch (value) {
+  'notStarted' || 'not_started' => GameStatus.notStarted,
+  'playing' => GameStatus.playing,
+  'completed' => GameStatus.completed,
+  'dropped' => GameStatus.dropped,
+  _ => null,
+};
+
 enum WishlistStatus { wantToBuy, owned, started }
 
 extension WishlistStatusDetails on WishlistStatus {
@@ -48,7 +56,7 @@ extension GameListTypeLabel on GameListType {
 
 extension GameStatusLabel on GameStatus {
   String get label => switch (this) {
-    GameStatus.notStarted => 'Não iniciado',
+    GameStatus.notStarted => 'Pendente',
     GameStatus.playing => 'Jogando',
     GameStatus.completed => 'Concluído',
     GameStatus.dropped => 'Dropado',
@@ -186,9 +194,7 @@ class Game {
     playtimeMinutes: row['playtime_minutes'] as int?,
     startDate: _date(row['start_date']),
     completionDate: _date(row['completion_date']),
-    status: row['status'] == null
-        ? null
-        : GameStatus.values.byName(row['status']! as String),
+    status: gameStatusFromStorage(row['status']),
     wishlistStatus: wishlistStatusFromStorage(row['wishlist_status']),
     listType: GameListType.values.byName(row['list_type']! as String),
     manualPosition: row['manual_position']! as int,

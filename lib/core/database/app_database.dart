@@ -139,6 +139,36 @@ class AppDatabase extends GeneratedDatabase {
     return rows.isEmpty ? null : Game.fromRow(rows.first.data);
   }
 
+  Future<Game?> updateSteamGamePlaytime(String id, int playtimeMinutes) async {
+    if (playtimeMinutes < 0) {
+      throw ArgumentError.value(playtimeMinutes, 'playtimeMinutes');
+    }
+
+    return transaction(() async {
+      final rows = await customSelect(
+        '''SELECT * FROM games
+           WHERE id = ? AND source = 'steam' AND list_type = 'library'
+             AND deleted_at IS NULL LIMIT 1''',
+        variables: [Variable.withString(id)],
+      ).get();
+      if (rows.isEmpty) return null;
+
+      final existing = Game.fromRow(rows.first.data);
+      if (existing.playtimeMinutes == playtimeMinutes) return existing;
+
+      final updatedAt = DateTime.now().toUtc().toIso8601String();
+      await customStatement(
+        '''UPDATE games
+           SET playtime_minutes = ?, updated_at = ?, local_sync_status = 'pending'
+           WHERE id = ?''',
+        [playtimeMinutes, updatedAt, id],
+      );
+      final updated = (await getGame(id))!;
+      await _queueGame(updated, type: 'upsert');
+      return updated;
+    });
+  }
+
   Future<Game> saveGame(
     GameDraft draft, {
     String? id,
@@ -550,11 +580,7 @@ class AppDatabase extends GeneratedDatabase {
     final source = data['source'] as String? ?? GameSource.manual.name;
     final remoteStatus = data['status'] as String?;
     final isWishlist = listType == GameListType.wishlist.name;
-    final status =
-        isWishlist ||
-            !GameStatus.values.any((value) => value.name == remoteStatus)
-        ? null
-        : remoteStatus;
+    final status = isWishlist ? null : gameStatusFromStorage(remoteStatus);
     final wishlistStatus = data.containsKey('wishlistStatus')
         ? wishlistStatusFromStorage(data['wishlistStatus'])
         : isWishlist
@@ -608,7 +634,7 @@ class AppDatabase extends GeneratedDatabase {
         (data['playtimeMinutes'] as num?)?.toInt(),
         data['startDate'],
         data['completionDate'],
-        status,
+        status?.name,
         wishlistStatus?.storageValue,
         listType,
         (data['manualPosition'] as num?)?.toInt() ?? 0,

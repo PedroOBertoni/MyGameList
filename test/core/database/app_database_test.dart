@@ -283,6 +283,22 @@ void main() {
     },
   );
 
+  test('maps the not_started status used by remote integrations', () async {
+    await database.applyRemoteGame(const {
+      'id': 'remote-not-started',
+      'name': 'Remote game',
+      'platformId': 'pc',
+      'listType': 'library',
+      'status': 'not_started',
+      'updatedAt': '2024-01-03T00:00:00.000Z',
+    });
+
+    expect(
+      (await database.getGame('remote-not-started'))?.status,
+      GameStatus.notStarted,
+    );
+  });
+
   test(
     'persists manual positions and list sort preferences in SQLite',
     () async {
